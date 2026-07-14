@@ -5,9 +5,14 @@ fn timestamp() -> String {
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default();
     let secs = now.as_secs();
-    let datetime = time::OffsetDateTime::from_unix_timestamp(secs as i64).unwrap_or(time::OffsetDateTime::UNIX_EPOCH);
-    datetime.format(&time::format_description::well_known::Rfc3339)
-        .unwrap_or_else(|_| secs.to_string())
+    match time::OffsetDateTime::from_unix_timestamp(secs as i64) {
+        Ok(datetime) => {
+            const FORMAT: &[time::format_description::FormatItem<'_>] =
+                time::macros::format_description!("[year]-[month]-[day] [hour]:[minute]:[second]");
+            datetime.format(&FORMAT).unwrap_or_else(|_| secs.to_string())
+        }
+        Err(_) => secs.to_string(),
+    }
 }
 
 pub fn info(msg: &str) {

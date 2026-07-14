@@ -66,6 +66,12 @@ bamboo sync nginx:1.25
 # 查看版本号
 bamboo --version
 
+# 生成配置文件模板
+bamboo init
+
+# 使用配置文件同步
+bamboo sync --config bamboo.toml nginx:1.25
+
 # 查看帮助
 bamboo sync --help
 
@@ -100,6 +106,7 @@ bamboo sync --verbose nginx:1.25
 
 | 环境变量 | 说明 |
 |---|---|
+| `BAMBOO_CONFIG` | TOML 配置文件路径 |
 | `BAMBOO_SOURCE_REGISTRY` | 源 Registry 地址 |
 | `BAMBOO_TARGET_REGISTRY` | 目标 Registry 地址 |
 | `BAMBOO_SOURCE_CREDS` | 源 Registry 认证，格式 `user:pass` |
@@ -135,6 +142,7 @@ bamboo sync --verbose nginx:1.25
 - 失败自动重试，支持自定义超时
 - 同步过程中逐层显示进度（config / layer 开始与完成）
 - 支持 `--quiet` / `--verbose` 调整日志级别
+- 支持 `bamboo init` 生成 TOML 配置文件模板，并通过 `--config` 读取
 
 ## 与 skopeo 脚本的对应关系
 

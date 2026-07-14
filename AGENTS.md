@@ -16,6 +16,12 @@ cargo test
 # 查看版本号
 bamboo --version
 
+# 生成配置文件模板
+bamboo init
+
+# 使用配置文件同步
+bamboo sync --config bamboo.toml nginx:1.25
+
 # 空跑（使用占位符默认地址，不会真正执行）
 cargo run -- sync --dry-run nginx:1.25
 
@@ -37,12 +43,14 @@ bamboo sync --timeout 30m --quiet nginx:1.25
 src/
 ├── main.rs      # 程序入口
 ├── cli.rs       # 命令行参数定义
+├── config.rs    # TOML 配置文件解析与 init 模板
 ├── error.rs     # 错误类型
 ├── image.rs     # 镜像引用解析
 ├── auth.rs      # 认证信息解析
 ├── registry.rs  # OCI Registry 客户端封装
-├── sync.rs      # 同步编排（重试、幂等）
-└── logging.rs   # 带时间戳的彩色日志输出
+├── sync.rs      # 同步编排（重试、幂等、超时）
+├── logging.rs   # 带时间戳和级别的日志输出
+└── init.rs      # init 子命令实现
 tests/
 ├── common/                   # 测试共享辅助代码
 │   └── mock_registry.rs      # 基于 axum 的最小 OCI Registry mock

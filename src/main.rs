@@ -1,16 +1,19 @@
 mod cli;
+mod config;
 mod error;
 mod image;
 mod auth;
 mod registry;
 mod sync;
 mod logging;
+mod init;
 
 use clap::Parser;
 use cli::{Cli, Commands};
 
 #[tokio::main]
 async fn main() {
+    config::preload_from_args();
     let cli = Cli::parse();
     let result = match cli.command {
         Commands::Sync(args) => {
@@ -24,6 +27,7 @@ async fn main() {
             logging::set_level(level);
             sync::run(args).await
         }
+        Commands::Init(args) => init::run(args),
     };
 
     if let Err(e) = result {

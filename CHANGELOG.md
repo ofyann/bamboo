@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--timeout` / `BAMBOO_TIMEOUT` for sync timeout (default 10m, 0 disables).
 - `--quiet` / `-q` and `--verbose` / `-v` log level flags.
 - Textual per-blob progress feedback during sync.
+- `bamboo init` command to generate a `bamboo.toml` template.
+- `--config` / `BAMBOO_CONFIG` to load settings from a TOML file.
 
 ### Changed
 

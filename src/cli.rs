@@ -13,12 +13,17 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     Sync(SyncArgs),
+    Init(InitArgs),
 }
 
 #[derive(Parser, Debug, Clone)]
 pub struct SyncArgs {
     /// 要同步的镜像引用，例如 nginx:1.25 或 quay.io/coreos/etcd:v3.5
     pub image: String,
+
+    /// TOML 配置文件路径
+    #[arg(long, env = "BAMBOO_CONFIG")]
+    pub config: Option<String>,
 
     /// 源 Registry 地址（例如 HubProxy 镜像代理）
     #[arg(long, env = "BAMBOO_SOURCE_REGISTRY", default_value = "hubproxy.example.com")]
@@ -75,6 +80,17 @@ pub struct SyncArgs {
     /// 输出 DEBUG 级别日志
     #[arg(long, short, conflicts_with = "quiet", default_value_t = false)]
     pub verbose: bool,
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct InitArgs {
+    /// 输出文件路径
+    #[arg(short, long, default_value = "bamboo.toml")]
+    pub output: String,
+
+    /// 强制覆盖已存在的文件
+    #[arg(long, default_value_t = false)]
+    pub force: bool,
 }
 
 fn parse_duration(s: &str) -> Result<Duration, String> {

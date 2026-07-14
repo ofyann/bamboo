@@ -14,6 +14,7 @@ http = "1.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
+toml = "0.8"
 time = { version = "0.3", features = ["formatting", "macros"] }
 base64 = "0.22"
 humantime = "2.1"

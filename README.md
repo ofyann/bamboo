@@ -93,7 +93,6 @@ bamboo sync --authfile /path/to/config.json nginx:1.25
 | `BAMBOO_INSECURE_DEST` | 跳过目标 Registry TLS 验证 |
 | `BAMBOO_RETRIES` | 失败重试次数，默认 3 |
 | `BAMBOO_RETRY_DELAY` | 重试间隔，默认 5s |
-| `BAMBOO_PARALLEL_COPIES` | 并发 blob 复制数，默认 5 |
 
 优先级：**命令行参数 > 环境变量 > 默认值**。
 

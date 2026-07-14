@@ -55,10 +55,6 @@ pub struct SyncArgs {
     #[arg(long, env = "BAMBOO_RETRY_DELAY", value_parser = parse_duration, default_value = "5s")]
     pub retry_delay: Duration,
 
-    /// Number of parallel blob copies
-    #[arg(long, env = "BAMBOO_PARALLEL_COPIES", default_value_t = 5)]
-    pub parallel_copies: usize,
-
     /// Force sync even if digests match
     #[arg(long, default_value_t = false)]
     pub force: bool,

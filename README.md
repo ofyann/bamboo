@@ -63,6 +63,9 @@ bamboo sync nginx:1.25
 ## 常用命令
 
 ```bash
+# 查看版本号
+bamboo --version
+
 # 查看帮助
 bamboo sync --help
 
@@ -71,6 +74,9 @@ bamboo sync --force nginx:1.25
 
 # 使用账号密码认证目标 Registry
 bamboo sync --creds username:password nginx:1.25
+
+# 源 Registry 也需要认证
+bamboo sync --source-creds username:password nginx:1.25
 
 # 跳过目标 Registry 的 TLS 验证（自建私服常用）
 bamboo sync --insecure-dest nginx:1.25

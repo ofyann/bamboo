@@ -13,6 +13,9 @@ cargo build --release
 # 运行测试
 cargo test
 
+# 查看版本号
+bamboo --version
+
 # 空跑（使用占位符默认地址，不会真正执行）
 cargo run -- sync --dry-run nginx:1.25
 
@@ -20,6 +23,9 @@ cargo run -- sync --dry-run nginx:1.25
 export BAMBOO_SOURCE_REGISTRY=你的源镜像代理地址
 export BAMBOO_TARGET_REGISTRY=你的目标私服地址
 bamboo sync nginx:1.25
+
+# 源 Registry 也需要认证时
+bamboo sync --source-creds user:pass nginx:1.25
 ```
 
 ## 项目结构

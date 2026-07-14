@@ -1,6 +1,6 @@
 use crate::auth::resolve_auth;
 use crate::cli::SyncArgs;
-use crate::error::Result;
+use crate::error::{BambooError, Result};
 use crate::image::ImageRef;
 use crate::logging;
 use crate::registry::RegistryClient;
@@ -78,5 +78,5 @@ pub async fn run(args: SyncArgs) -> Result<()> {
         }
     }
 
-    Err(last_err.unwrap())
+    Err(BambooError::Sync(last_err.unwrap().to_string()))
 }

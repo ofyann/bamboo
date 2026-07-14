@@ -21,7 +21,7 @@ impl ImageRef {
 
     pub fn image_path(&self) -> String {
         if self.namespace.is_empty() {
-            format!("{}", self.name)
+            self.name.clone()
         } else {
             format!("{}/{}", self.namespace, self.name)
         }

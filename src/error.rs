@@ -16,9 +16,6 @@ pub enum BambooError {
 
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
-
-    #[error("request error: {0}")]
-    Reqwest(#[from] reqwest::Error),
 }
 
 pub type Result<T> = std::result::Result<T, BambooError>;

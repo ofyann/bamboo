@@ -4,7 +4,7 @@ use oci_distribution::client::{Client, ClientConfig, ClientProtocol};
 use oci_distribution::manifest::{OciImageIndex, OciManifest};
 use oci_distribution::secrets::RegistryAuth;
 use oci_distribution::Reference;
-use reqwest::header::HeaderValue;
+use http::header::HeaderValue;
 
 const ACCEPTED_MEDIA_TYPES: &[&str] = &[
     "application/vnd.docker.distribution.manifest.list.v2+json",

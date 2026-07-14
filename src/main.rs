@@ -1,6 +1,6 @@
-mod cli;
-mod error;
-mod image;
+pub mod cli;
+pub mod error;
+pub mod image;
 mod auth;
 mod registry;
 mod sync;

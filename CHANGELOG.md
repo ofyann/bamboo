@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Source registry authentication via `--source-creds` and `BAMBOO_SOURCE_CREDS`.
 - `--version` / `-V` flag to print the CLI version.
+- `--timeout` / `BAMBOO_TIMEOUT` for sync timeout (default 10m, 0 disables).
+- `--quiet` / `-q` and `--verbose` / `-v` log level flags.
+- Textual per-blob progress feedback during sync.
 
 ### Changed
 

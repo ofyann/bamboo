@@ -1,5 +1,6 @@
 use crate::auth::Auth;
 use crate::error::{BambooError, Result};
+use crate::logging;
 use oci_distribution::client::{Client, ClientConfig, ClientProtocol};
 use oci_distribution::manifest::{OciImageIndex, OciImageManifest, OciManifest};
 use oci_distribution::secrets::RegistryAuth;
@@ -81,14 +82,19 @@ impl RegistryClient {
         let manifest: OciManifest = serde_json::from_slice(&manifest_body)
             .map_err(|e| BambooError::Registry(format!("解析 manifest 失败: {e}")))?;
 
-        match manifest {
+        match &manifest {
             OciManifest::Image(_) => {
+                logging::debug("同步单架构镜像");
                 // Single-arch image: copy blobs by digest and push the manifest raw
                 // so the destination digest matches the source.
                 let manifest: OciImageManifest = serde_json::from_slice(&manifest_body)
                     .map_err(|e| BambooError::Registry(format!("解析 manifest 失败: {e}")))?;
 
                 let mut config = Vec::new();
+                logging::info(&format!(
+                    "拉取 config {} ({} bytes)...",
+                    manifest.config.digest, manifest.config.size
+                ));
                 source
                     .client
                     .pull_blob(&source.reference, &manifest.config, &mut config)
@@ -99,6 +105,15 @@ impl RegistryClient {
                             manifest.config.digest, e
                         ))
                     })?;
+                logging::info(&format!(
+                    "拉取 config {} 完成",
+                    manifest.config.digest
+                ));
+
+                logging::info(&format!(
+                    "推送 config {} ({} bytes)...",
+                    manifest.config.digest, config.len()
+                ));
                 self.client
                     .push_blob(&self.reference, &config, &manifest.config.digest)
                     .await
@@ -108,9 +123,17 @@ impl RegistryClient {
                             manifest.config.digest, e
                         ))
                     })?;
+                logging::info(&format!(
+                    "推送 config {} 完成",
+                    manifest.config.digest
+                ));
 
                 for layer in &manifest.layers {
                     let mut data = Vec::new();
+                    logging::info(&format!(
+                        "拉取 layer {} ({} bytes)...",
+                        layer.digest, layer.size
+                    ));
                     source
                         .client
                         .pull_blob(&source.reference, layer, &mut data)
@@ -121,6 +144,15 @@ impl RegistryClient {
                                 layer.digest, e
                             ))
                         })?;
+                    logging::info(&format!(
+                        "拉取 layer {} 完成",
+                        layer.digest
+                    ));
+
+                    logging::info(&format!(
+                        "推送 layer {} ({} bytes)...",
+                        layer.digest, data.len()
+                    ));
                     self.client
                         .push_blob(&self.reference, &data, &layer.digest)
                         .await
@@ -130,6 +162,10 @@ impl RegistryClient {
                                 layer.digest, e
                             ))
                         })?;
+                    logging::info(&format!(
+                        "推送 layer {} 完成",
+                        layer.digest
+                    ));
                 }
 
                 let content_type = HeaderValue::from_str(
@@ -146,8 +182,12 @@ impl RegistryClient {
                     .map_err(|e| BambooError::Registry(format!("推送 manifest 失败: {e}")))?;
             }
             OciManifest::ImageIndex(index) => {
+                logging::debug(&format!(
+                    "同步多架构镜像 index，包含 {} 个子 manifest",
+                    index.manifests.len()
+                ));
                 // Multi-arch image: copy each platform manifest by digest, then push the index.
-                self.copy_image_index(source, &index, &source_registry_auth)
+                self.copy_image_index(source, index, &source_registry_auth)
                     .await?;
 
                 let content_type = HeaderValue::from_str(
@@ -209,6 +249,10 @@ impl RegistryClient {
                 })?;
 
             let mut config = Vec::new();
+            logging::info(&format!(
+                "拉取子 config {} ({} bytes)...",
+                manifest.config.digest, manifest.config.size
+            ));
             source
                 .client
                 .pull_blob(&child_ref, &manifest.config, &mut config)
@@ -219,6 +263,15 @@ impl RegistryClient {
                         manifest.config.digest, e
                     ))
                 })?;
+            logging::info(&format!(
+                "拉取子 config {} 完成",
+                manifest.config.digest
+            ));
+
+            logging::info(&format!(
+                "推送子 config {} ({} bytes)...",
+                manifest.config.digest, config.len()
+            ));
             self.client
                 .push_blob(&target_child_ref, &config, &manifest.config.digest)
                 .await
@@ -228,9 +281,17 @@ impl RegistryClient {
                         manifest.config.digest, e
                     ))
                 })?;
+            logging::info(&format!(
+                "推送子 config {} 完成",
+                manifest.config.digest
+            ));
 
             for layer in &manifest.layers {
                 let mut data = Vec::new();
+                logging::info(&format!(
+                    "拉取子 layer {} ({} bytes)...",
+                    layer.digest, layer.size
+                ));
                 source
                     .client
                     .pull_blob(&child_ref, layer, &mut data)
@@ -241,6 +302,15 @@ impl RegistryClient {
                             layer.digest, e
                         ))
                     })?;
+                logging::info(&format!(
+                    "拉取子 layer {} 完成",
+                    layer.digest
+                ));
+
+                logging::info(&format!(
+                    "推送子 layer {} ({} bytes)...",
+                    layer.digest, data.len()
+                ));
                 self.client
                     .push_blob(&target_child_ref, &data, &layer.digest)
                     .await
@@ -250,6 +320,10 @@ impl RegistryClient {
                             layer.digest, e
                         ))
                     })?;
+                logging::info(&format!(
+                    "推送子 layer {} 完成",
+                    layer.digest
+                ));
             }
 
             let content_type = HeaderValue::from_str(

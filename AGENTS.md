@@ -26,6 +26,9 @@ bamboo sync nginx:1.25
 
 # 源 Registry 也需要认证时
 bamboo sync --source-creds user:pass nginx:1.25
+
+# 设置超时与日志级别
+bamboo sync --timeout 30m --quiet nginx:1.25
 ```
 
 ## 项目结构

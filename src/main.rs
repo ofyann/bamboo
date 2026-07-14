@@ -13,7 +13,17 @@ use cli::{Cli, Commands};
 async fn main() {
     let cli = Cli::parse();
     let result = match cli.command {
-        Commands::Sync(args) => sync::run(args).await,
+        Commands::Sync(args) => {
+            let level = if args.quiet {
+                logging::LogLevel::Warn
+            } else if args.verbose {
+                logging::LogLevel::Debug
+            } else {
+                logging::LogLevel::Info
+            };
+            logging::set_level(level);
+            sync::run(args).await
+        }
     };
 
     if let Err(e) = result {

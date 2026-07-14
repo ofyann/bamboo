@@ -60,9 +60,21 @@ pub struct SyncArgs {
     #[arg(long, env = "BAMBOO_RETRY_DELAY", value_parser = parse_duration, default_value = "5s")]
     pub retry_delay: Duration,
 
+    /// 同步超时时间，0 表示不超时
+    #[arg(long, env = "BAMBOO_TIMEOUT", value_parser = parse_duration, default_value = "10m")]
+    pub timeout: Duration,
+
     /// 即使 digest 一致也强制同步
     #[arg(long, default_value_t = false)]
     pub force: bool,
+
+    /// 只输出 WARN 及以上级别日志
+    #[arg(long, short, conflicts_with = "verbose", default_value_t = false)]
+    pub quiet: bool,
+
+    /// 输出 DEBUG 级别日志
+    #[arg(long, short, conflicts_with = "quiet", default_value_t = false)]
+    pub verbose: bool,
 }
 
 fn parse_duration(s: &str) -> Result<Duration, String> {

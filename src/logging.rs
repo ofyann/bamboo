@@ -1,4 +1,31 @@
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::SystemTime;
+
+static LOG_LEVEL: AtomicU8 = AtomicU8::new(LogLevel::Info as u8);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+pub enum LogLevel {
+    Error = 0,
+    Warn = 1,
+    Info = 2,
+    Debug = 3,
+}
+
+impl LogLevel {
+    fn current() -> Self {
+        match LOG_LEVEL.load(Ordering::Relaxed) {
+            0 => LogLevel::Error,
+            1 => LogLevel::Warn,
+            3 => LogLevel::Debug,
+            _ => LogLevel::Info,
+        }
+    }
+}
+
+pub fn set_level(level: LogLevel) {
+    LOG_LEVEL.store(level as u8, Ordering::Relaxed);
+}
 
 fn timestamp() -> String {
     let now = SystemTime::now()
@@ -15,14 +42,26 @@ fn timestamp() -> String {
     }
 }
 
+pub fn debug(msg: &str) {
+    if LogLevel::current() >= LogLevel::Debug {
+        println!("{} [DEBUG] {}", timestamp(), msg);
+    }
+}
+
 pub fn info(msg: &str) {
-    println!("{} [INFO] {}", timestamp(), msg);
+    if LogLevel::current() >= LogLevel::Info {
+        println!("{} [INFO] {}", timestamp(), msg);
+    }
 }
 
 pub fn warn(msg: &str) {
-    eprintln!("{} [WARN] {}", timestamp(), msg);
+    if LogLevel::current() >= LogLevel::Warn {
+        eprintln!("{} [WARN] {}", timestamp(), msg);
+    }
 }
 
 pub fn error(msg: &str) {
-    eprintln!("{} [ERROR] {}", timestamp(), msg);
+    if LogLevel::current() >= LogLevel::Error {
+        eprintln!("{} [ERROR] {}", timestamp(), msg);
+    }
 }

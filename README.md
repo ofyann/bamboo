@@ -83,6 +83,15 @@ bamboo sync --insecure-dest nginx:1.25
 
 # 指定 docker config 认证文件
 bamboo sync --authfile /path/to/config.json nginx:1.25
+
+# 设置同步超时为 30 分钟
+bamboo sync --timeout 30m nginx:1.25
+
+# 只输出警告和错误（减少日志）
+bamboo sync --quiet nginx:1.25
+
+# 输出调试日志
+bamboo sync --verbose nginx:1.25
 ```
 
 ## 环境变量
@@ -100,6 +109,9 @@ bamboo sync --authfile /path/to/config.json nginx:1.25
 | `BAMBOO_INSECURE_DEST` | 跳过目标 Registry TLS 验证 |
 | `BAMBOO_RETRIES` | 失败重试次数，默认 3 |
 | `BAMBOO_RETRY_DELAY` | 重试间隔，默认 5s |
+| `BAMBOO_TIMEOUT` | 同步超时时间，默认 10m，0 表示不超时 |
+| `BAMBOO_QUIET` | 只输出 WARN 及以上日志 |
+| `BAMBOO_VERBOSE` | 输出 DEBUG 日志 |
 
 优先级：**命令行参数 > 环境变量 > 默认值**。
 
@@ -120,7 +132,9 @@ bamboo sync --authfile /path/to/config.json nginx:1.25
 - 基于 digest 的幂等同步，默认跳过已一致镜像
 - 支持 `--dry-run` 空跑模式
 - 自动处理 `docker.io/library/` 前缀和 HubProxy 路由
-- 失败自动重试
+- 失败自动重试，支持自定义超时
+- 同步过程中逐层显示进度（config / layer 开始与完成）
+- 支持 `--quiet` / `--verbose` 调整日志级别
 
 ## 与 skopeo 脚本的对应关系
 

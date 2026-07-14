@@ -50,9 +50,9 @@ tests/
 
 ## Important Notes
 
-- The release binary is optimized for size (`strip`, `lto`, `opt-level = "z"`, `panic = "abort"`).
+- The release binary is optimized for size (`strip`, `lto`, `opt-level = "z"`, `panic = "abort"`, `codegen-units = 1`). Current size is about 2.0 MB on macOS ARM64.
 - Integration tests are marked `#[ignore]` and require real registries.
-- `BambooError::Sync` variant is currently unused and emits a compiler warning; either use it or remove it.
+- Direct HTTP client dependency is `http`; actual registry HTTP calls go through `oci-distribution`.
 
 ## Files Not Tracked in Git
 

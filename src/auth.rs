@@ -42,7 +42,7 @@ pub fn resolve_auth(creds: Option<&str>, authfile: &str, registry: &str) -> Resu
 fn parse_creds(creds: &str) -> Result<Auth> {
     let (user, pass) = creds
         .split_once(':')
-        .ok_or_else(|| BambooError::Auth("credentials must be in user:pass format".to_string()))?;
+        .ok_or_else(|| BambooError::Auth("凭据格式必须为 user:pass".to_string()))?;
     Ok(Auth {
         username: user.to_string(),
         password: pass.to_string(),
@@ -52,7 +52,7 @@ fn parse_creds(creds: &str) -> Result<Auth> {
 fn read_docker_config(path: &std::path::Path, registry: &str) -> Result<Option<Auth>> {
     let contents = fs::read_to_string(path)?;
     let config: DockerConfig = serde_json::from_str(&contents)
-        .map_err(|e| BambooError::Auth(format!("invalid docker config: {e}")))?;
+        .map_err(|e| BambooError::Auth(format!("Docker 配置文件格式错误: {e}")))?;
 
     let auths = match config.auths {
         Some(a) => a,
@@ -68,9 +68,9 @@ fn read_docker_config(path: &std::path::Path, registry: &str) -> Result<Option<A
     if let Some(auth_b64) = entry.and_then(|a| a.auth.as_ref()) {
         let decoded = String::from_utf8(
             base64::Engine::decode(&base64::engine::general_purpose::STANDARD, auth_b64)
-                .map_err(|e| BambooError::Auth(format!("base64 decode failed: {e}")))?,
+                .map_err(|e| BambooError::Auth(format!("凭据 base64 解码失败: {e}")))?,
         )
-        .map_err(|e| BambooError::Auth(format!("invalid utf8 in auth: {e}")))?;
+        .map_err(|e| BambooError::Auth(format!("凭据包含非法 UTF-8: {e}")))?;
 
         let (user, pass) = decoded.split_once(':').unwrap_or((&decoded, ""));
         return Ok(Some(Auth {

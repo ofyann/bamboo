@@ -23,7 +23,7 @@ impl RegistryClient {
         let reference_str = format!("{}/{image_path}:{tag}", registry);
         let reference: Reference = reference_str
             .parse()
-            .map_err(|e| BambooError::Registry(format!("invalid reference: {e}")))?;
+            .map_err(|e| BambooError::Registry(format!("镜像引用无效: {e}")))?;
 
         let protocol = if insecure {
             ClientProtocol::Http
@@ -60,7 +60,7 @@ impl RegistryClient {
             {
                 Ok(None)
             }
-            Err(e) => Err(BambooError::Registry(format!("inspect failed: {e}"))),
+            Err(e) => Err(BambooError::Registry(format!("获取 digest 失败: {e}"))),
         }
     }
 
@@ -76,17 +76,17 @@ impl RegistryClient {
             .client
             .pull_manifest_raw(&source.reference, &source_registry_auth, ACCEPTED_MEDIA_TYPES)
             .await
-            .map_err(|e| BambooError::Registry(format!("pull manifest failed: {e}")))?;
+            .map_err(|e| BambooError::Registry(format!("拉取 manifest 失败: {e}")))?;
 
         let manifest: OciManifest = serde_json::from_slice(&manifest_body)
-            .map_err(|e| BambooError::Registry(format!("parse manifest failed: {e}")))?;
+            .map_err(|e| BambooError::Registry(format!("解析 manifest 失败: {e}")))?;
 
         match manifest {
             OciManifest::Image(_) => {
                 // Single-arch image: copy blobs by digest and push the manifest raw
                 // so the destination digest matches the source.
                 let manifest: OciImageManifest = serde_json::from_slice(&manifest_body)
-                    .map_err(|e| BambooError::Registry(format!("parse manifest failed: {e}")))?;
+                    .map_err(|e| BambooError::Registry(format!("解析 manifest 失败: {e}")))?;
 
                 let mut config = Vec::new();
                 source
@@ -95,7 +95,7 @@ impl RegistryClient {
                     .await
                     .map_err(|e| {
                         BambooError::Registry(format!(
-                            "pull config {} failed: {}",
+                            "拉取 config {} 失败: {}",
                             manifest.config.digest, e
                         ))
                     })?;
@@ -104,7 +104,7 @@ impl RegistryClient {
                     .await
                     .map_err(|e| {
                         BambooError::Registry(format!(
-                            "push config {} failed: {}",
+                            "推送 config {} 失败: {}",
                             manifest.config.digest, e
                         ))
                     })?;
@@ -117,7 +117,7 @@ impl RegistryClient {
                         .await
                         .map_err(|e| {
                             BambooError::Registry(format!(
-                                "pull layer {} failed: {}",
+                                "拉取 layer {} 失败: {}",
                                 layer.digest, e
                             ))
                         })?;
@@ -126,7 +126,7 @@ impl RegistryClient {
                         .await
                         .map_err(|e| {
                             BambooError::Registry(format!(
-                                "push layer {} failed: {}",
+                                "推送 layer {} 失败: {}",
                                 layer.digest, e
                             ))
                         })?;
@@ -138,12 +138,12 @@ impl RegistryClient {
                         .as_deref()
                         .unwrap_or("application/vnd.oci.image.manifest.v1+json"),
                 )
-                .map_err(|e| BambooError::Registry(format!("invalid content type: {e}")))?;
+                .map_err(|e| BambooError::Registry(format!("Content-Type 无效: {e}")))?;
 
                 self.client
                     .push_manifest_raw(&self.reference, manifest_body, content_type)
                     .await
-                    .map_err(|e| BambooError::Registry(format!("push manifest failed: {e}")))?;
+                    .map_err(|e| BambooError::Registry(format!("推送 manifest 失败: {e}")))?;
             }
             OciManifest::ImageIndex(index) => {
                 // Multi-arch image: copy each platform manifest by digest, then push the index.
@@ -156,12 +156,12 @@ impl RegistryClient {
                         .as_deref()
                         .unwrap_or("application/vnd.oci.image.index.v1+json"),
                 )
-                .map_err(|e| BambooError::Registry(format!("invalid content type: {e}")))?;
+                .map_err(|e| BambooError::Registry(format!("Content-Type 无效: {e}")))?;
 
                 self.client
                     .push_manifest_raw(&self.reference, manifest_body, content_type)
                     .await
-                    .map_err(|e| BambooError::Registry(format!("push manifest index failed: {e}")))?;
+                    .map_err(|e| BambooError::Registry(format!("推送 manifest index 失败: {e}")))?;
             }
         }
 
@@ -195,7 +195,7 @@ impl RegistryClient {
                 .await
                 .map_err(|e| {
                     BambooError::Registry(format!(
-                        "pull child manifest {} failed: {}",
+                        "拉取子 manifest {} 失败: {}",
                         digest, e
                     ))
                 })?;
@@ -203,7 +203,7 @@ impl RegistryClient {
             let manifest: OciImageManifest = serde_json::from_slice(&manifest_body)
                 .map_err(|e| {
                     BambooError::Registry(format!(
-                        "parse child manifest {} failed: {}",
+                        "解析子 manifest {} 失败: {}",
                         digest, e
                     ))
                 })?;
@@ -215,7 +215,7 @@ impl RegistryClient {
                 .await
                 .map_err(|e| {
                     BambooError::Registry(format!(
-                        "pull child config {} failed: {}",
+                        "拉取子 config {} 失败: {}",
                         manifest.config.digest, e
                     ))
                 })?;
@@ -224,7 +224,7 @@ impl RegistryClient {
                 .await
                 .map_err(|e| {
                     BambooError::Registry(format!(
-                        "push child config {} failed: {}",
+                        "推送子 config {} 失败: {}",
                         manifest.config.digest, e
                     ))
                 })?;
@@ -237,7 +237,7 @@ impl RegistryClient {
                     .await
                     .map_err(|e| {
                         BambooError::Registry(format!(
-                            "pull child layer {} failed: {}",
+                            "拉取子 layer {} 失败: {}",
                             layer.digest, e
                         ))
                     })?;
@@ -246,7 +246,7 @@ impl RegistryClient {
                     .await
                     .map_err(|e| {
                         BambooError::Registry(format!(
-                            "push child layer {} failed: {}",
+                            "推送子 layer {} 失败: {}",
                             layer.digest, e
                         ))
                     })?;
@@ -260,7 +260,7 @@ impl RegistryClient {
             )
             .map_err(|e| {
                 BambooError::Registry(format!(
-                    "invalid child manifest content type: {}",
+                    "子 manifest Content-Type 无效: {}",
                     e
                 ))
             })?;
@@ -270,7 +270,7 @@ impl RegistryClient {
                 .await
                 .map_err(|e| {
                     BambooError::Registry(format!(
-                        "push child manifest {} failed: {}",
+                        "推送子 manifest {} 失败: {}",
                         digest, e
                     ))
                 })?;

@@ -66,5 +66,5 @@ pub struct SyncArgs {
 }
 
 fn parse_duration(s: &str) -> Result<Duration, String> {
-    humantime::parse_duration(s).map_err(|e| e.to_string())
+    humantime::parse_duration(s).map_err(|e| format!("无法解析时长 '{}': {}", s, e))
 }

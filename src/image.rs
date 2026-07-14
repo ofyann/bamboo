@@ -47,7 +47,7 @@ impl FromStr for ImageRef {
     fn from_str(s: &str) -> Result<Self> {
         let input = s.trim();
         if input.is_empty() {
-            return Err(BambooError::ImageParse("empty image reference".to_string()));
+            return Err(BambooError::ImageParse("镜像引用不能为空".to_string()));
         }
 
         // Split tag from the right. A tag cannot contain '/', so any ':' followed by '/'
@@ -97,13 +97,13 @@ mod tests {
     #[test]
     fn test_empty_input() {
         let err = ImageRef::from_str("").unwrap_err();
-        assert!(err.to_string().contains("empty"));
+        assert!(err.to_string().contains("不能为空"));
     }
 
     #[test]
     fn test_whitespace_only() {
         let err = ImageRef::from_str("   ").unwrap_err();
-        assert!(err.to_string().contains("empty"));
+        assert!(err.to_string().contains("不能为空"));
     }
 
     #[test]

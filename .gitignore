@@ -18,3 +18,8 @@
 
 # Test artifacts
 *.log
+
+# AI / project context files not tracked in git
+CONTEXT.md
+docs/
+.superpowers/

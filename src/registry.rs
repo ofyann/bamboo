@@ -1,7 +1,7 @@
 use crate::auth::Auth;
 use crate::error::{BambooError, Result};
 use oci_distribution::client::{Client, ClientConfig, ClientProtocol};
-use oci_distribution::manifest::{OciImageIndex, OciManifest};
+use oci_distribution::manifest::{OciImageIndex, OciImageManifest, OciManifest};
 use oci_distribution::secrets::RegistryAuth;
 use oci_distribution::Reference;
 use http::header::HeaderValue;
@@ -11,6 +11,13 @@ const ACCEPTED_MEDIA_TYPES: &[&str] = &[
     "application/vnd.oci.image.index.v1+json",
     "application/vnd.docker.distribution.manifest.v2+json",
     "application/vnd.oci.image.manifest.v1+json",
+];
+
+const ACCEPTED_LAYER_MEDIA_TYPES: &[&str] = &[
+    "application/vnd.oci.image.layer.v1.tar",
+    "application/vnd.oci.image.layer.v1.tar+gzip",
+    "application/vnd.docker.image.rootfs.diff.tar",
+    "application/vnd.docker.image.rootfs.diff.tar.gzip",
 ];
 
 pub struct RegistryClient {
@@ -83,23 +90,67 @@ impl RegistryClient {
 
         match manifest {
             OciManifest::Image(_) => {
-                // Single-arch image: use pull/push which handles layers and config.
-                let image_data = source
+                // Single-arch image: copy blobs by digest and push the manifest raw
+                // so the destination digest matches the source.
+                let manifest: OciImageManifest = serde_json::from_slice(&manifest_body)
+                    .map_err(|e| BambooError::Registry(format!("parse manifest failed: {e}")))?;
+
+                let mut config = Vec::new();
+                source
                     .client
-                    .pull(&source.reference, &RegistryAuth::Anonymous, ACCEPTED_MEDIA_TYPES.to_vec())
+                    .pull_blob(&source.reference, &manifest.config, &mut config)
                     .await
-                    .map_err(|e| BambooError::Registry(format!("pull image failed: {e}")))?;
+                    .map_err(|e| {
+                        BambooError::Registry(format!(
+                            "pull config {} failed: {}",
+                            manifest.config.digest, e
+                        ))
+                    })?;
+                self.client
+                    .push_blob(&self.reference, &config, &manifest.config.digest)
+                    .await
+                    .map_err(|e| {
+                        BambooError::Registry(format!(
+                            "push config {} failed: {}",
+                            manifest.config.digest, e
+                        ))
+                    })?;
+
+                for layer in &manifest.layers {
+                    let mut data = Vec::new();
+                    source
+                        .client
+                        .pull_blob(&source.reference, layer, &mut data)
+                        .await
+                        .map_err(|e| {
+                            BambooError::Registry(format!(
+                                "pull layer {} failed: {}",
+                                layer.digest, e
+                            ))
+                        })?;
+                    self.client
+                        .push_blob(&self.reference, &data, &layer.digest)
+                        .await
+                        .map_err(|e| {
+                            BambooError::Registry(format!(
+                                "push layer {} failed: {}",
+                                layer.digest, e
+                            ))
+                        })?;
+                }
+
+                let content_type = HeaderValue::from_str(
+                    manifest
+                        .media_type
+                        .as_deref()
+                        .unwrap_or("application/vnd.oci.image.manifest.v1+json"),
+                )
+                .map_err(|e| BambooError::Registry(format!("invalid content type: {e}")))?;
 
                 self.client
-                    .push(
-                        &self.reference,
-                        &image_data.layers,
-                        image_data.config,
-                        &registry_auth,
-                        image_data.manifest,
-                    )
+                    .push_manifest_raw(&self.reference, manifest_body, content_type)
                     .await
-                    .map_err(|e| BambooError::Registry(format!("push image failed: {e}")))?;
+                    .map_err(|e| BambooError::Registry(format!("push manifest failed: {e}")))?;
             }
             OciManifest::ImageIndex(index) => {
                 // Multi-arch image: copy each platform manifest by digest, then push the index.
@@ -146,7 +197,7 @@ impl RegistryClient {
 
             let image_data = source
                 .client
-                .pull(&child_ref, &RegistryAuth::Anonymous, ACCEPTED_MEDIA_TYPES.to_vec())
+                .pull(&child_ref, &RegistryAuth::Anonymous, ACCEPTED_LAYER_MEDIA_TYPES.to_vec())
                 .await
                 .map_err(|e| {
                     BambooError::Registry(format!(

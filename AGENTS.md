@@ -35,8 +35,11 @@ src/
 ├── sync.rs      # 同步编排（重试、幂等）
 └── logging.rs   # 带时间戳的彩色日志输出
 tests/
+├── common/                   # 测试共享辅助代码
+│   └── mock_registry.rs      # 基于 axum 的最小 OCI Registry mock
 ├── image_tests.rs            # 镜像解析单元测试
-└── sync_integration_test.rs  # 需要真实 Registry 的集成测试骨架
+├── sync_integration_test.rs  # 需要真实 Registry 的集成测试骨架
+└── sync_test.rs              # 基于 mock Registry 的同步集成测试
 ```
 
 ## 开发约定

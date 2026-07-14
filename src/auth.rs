@@ -86,6 +86,9 @@ fn read_docker_config(path: &std::path::Path, registry: &str) -> Result<Option<A
 mod tests {
     use super::*;
     use std::io::Write;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static TEST_DIR_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
     fn base64_auth(user: &str, pass: &str) -> String {
         base64::Engine::encode(
@@ -96,15 +99,20 @@ mod tests {
 
     fn write_config(contents: &str) -> std::path::PathBuf {
         use std::time::{SystemTime, UNIX_EPOCH};
-        let unique = SystemTime::now()
+        let counter = TEST_DIR_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("bamboo-auth-test-{}", unique));
+        let dir = std::env::temp_dir().join(format!(
+            "bamboo-auth-test-{}-{}",
+            counter, nanos
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("config.json");
         let mut file = std::fs::File::create(&path).unwrap();
         file.write_all(contents.as_bytes()).unwrap();
+        file.flush().unwrap();
         path
     }
 

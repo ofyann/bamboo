@@ -13,13 +13,6 @@ const ACCEPTED_MEDIA_TYPES: &[&str] = &[
     "application/vnd.oci.image.manifest.v1+json",
 ];
 
-const ACCEPTED_LAYER_MEDIA_TYPES: &[&str] = &[
-    "application/vnd.oci.image.layer.v1.tar",
-    "application/vnd.oci.image.layer.v1.tar+gzip",
-    "application/vnd.docker.image.rootfs.diff.tar",
-    "application/vnd.docker.image.rootfs.diff.tar.gzip",
-];
-
 pub struct RegistryClient {
     client: Client,
     reference: Reference,
@@ -179,7 +172,7 @@ impl RegistryClient {
         &self,
         source: &RegistryClient,
         index: &OciImageIndex,
-        auth: &RegistryAuth,
+        _auth: &RegistryAuth,
     ) -> Result<()> {
         for entry in &index.manifests {
             let digest = &entry.digest;
@@ -195,9 +188,10 @@ impl RegistryClient {
                 digest.clone(),
             );
 
-            let image_data = source
+            // Pull the child manifest raw so its digest is preserved in the target.
+            let (manifest_body, _) = source
                 .client
-                .pull(&child_ref, &RegistryAuth::Anonymous, ACCEPTED_LAYER_MEDIA_TYPES.to_vec())
+                .pull_manifest_raw(&child_ref, &RegistryAuth::Anonymous, ACCEPTED_MEDIA_TYPES)
                 .await
                 .map_err(|e| {
                     BambooError::Registry(format!(
@@ -206,8 +200,73 @@ impl RegistryClient {
                     ))
                 })?;
 
+            let manifest: OciImageManifest = serde_json::from_slice(&manifest_body)
+                .map_err(|e| {
+                    BambooError::Registry(format!(
+                        "parse child manifest {} failed: {}",
+                        digest, e
+                    ))
+                })?;
+
+            let mut config = Vec::new();
+            source
+                .client
+                .pull_blob(&child_ref, &manifest.config, &mut config)
+                .await
+                .map_err(|e| {
+                    BambooError::Registry(format!(
+                        "pull child config {} failed: {}",
+                        manifest.config.digest, e
+                    ))
+                })?;
             self.client
-                .push(&target_child_ref, &image_data.layers, image_data.config, auth, image_data.manifest)
+                .push_blob(&target_child_ref, &config, &manifest.config.digest)
+                .await
+                .map_err(|e| {
+                    BambooError::Registry(format!(
+                        "push child config {} failed: {}",
+                        manifest.config.digest, e
+                    ))
+                })?;
+
+            for layer in &manifest.layers {
+                let mut data = Vec::new();
+                source
+                    .client
+                    .pull_blob(&child_ref, layer, &mut data)
+                    .await
+                    .map_err(|e| {
+                        BambooError::Registry(format!(
+                            "pull child layer {} failed: {}",
+                            layer.digest, e
+                        ))
+                    })?;
+                self.client
+                    .push_blob(&target_child_ref, &data, &layer.digest)
+                    .await
+                    .map_err(|e| {
+                        BambooError::Registry(format!(
+                            "push child layer {} failed: {}",
+                            layer.digest, e
+                        ))
+                    })?;
+            }
+
+            let content_type = HeaderValue::from_str(
+                manifest
+                    .media_type
+                    .as_deref()
+                    .unwrap_or("application/vnd.oci.image.manifest.v1+json"),
+            )
+            .map_err(|e| {
+                BambooError::Registry(format!(
+                    "invalid child manifest content type: {}",
+                    e
+                ))
+            })?;
+
+            self.client
+                .push_manifest_raw(&target_child_ref, manifest_body, content_type)
                 .await
                 .map_err(|e| {
                     BambooError::Registry(format!(

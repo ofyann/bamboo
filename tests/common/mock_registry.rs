@@ -345,6 +345,10 @@ async fn put_manifest(
         .insert((repo.to_string(), digest.clone()), entry);
 
     let mut resp_headers = HeaderMap::new();
+    resp_headers.insert(
+        "Location",
+        HeaderValue::from_str(&format!("/v2/{}/manifests/{}", repo, digest)).unwrap(),
+    );
     resp_headers.insert("Docker-Content-Digest", HeaderValue::from_str(&digest).unwrap());
     (StatusCode::CREATED, resp_headers).into_response()
 }

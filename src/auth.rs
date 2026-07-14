@@ -81,3 +81,88 @@ fn read_docker_config(path: &std::path::Path, registry: &str) -> Result<Option<A
 
     Ok(None)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn base64_auth(user: &str, pass: &str) -> String {
+        base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            format!("{}:{}", user, pass),
+        )
+    }
+
+    fn write_config(contents: &str) -> std::path::PathBuf {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("bamboo-auth-test-{}", unique));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.json");
+        let mut file = std::fs::File::create(&path).unwrap();
+        file.write_all(contents.as_bytes()).unwrap();
+        path
+    }
+
+    #[test]
+    fn test_parse_creds() {
+        let auth = parse_creds("admin:secret").unwrap();
+        assert_eq!(auth.username, "admin");
+        assert_eq!(auth.password, "secret");
+    }
+
+    #[test]
+    fn test_parse_creds_missing_colon() {
+        let err = parse_creds("admin").unwrap_err();
+        assert!(err.to_string().contains("user:pass"));
+    }
+
+    #[test]
+    fn test_resolve_auth_creds_takes_precedence() {
+        let auth = resolve_auth(Some("user:pass"), "/nonexistent", "registry.example.com")
+            .unwrap()
+            .unwrap();
+        assert_eq!(auth.username, "user");
+        assert_eq!(auth.password, "pass");
+    }
+
+    #[test]
+    fn test_read_docker_config_exact_match() {
+        let path = write_config(&format!(
+            r#"{{"auths": {{"registry.example.com": {{"auth": "{}"}}}}}}"#,
+            base64_auth("docker", "hub")
+        ));
+        let auth = read_docker_config(&path, "registry.example.com").unwrap().unwrap();
+        assert_eq!(auth.username, "docker");
+        assert_eq!(auth.password, "hub");
+    }
+
+    #[test]
+    fn test_read_docker_config_https_prefix() {
+        let path = write_config(&format!(
+            r#"{{"auths": {{"https://registry.example.com": {{"auth": "{}"}}}}}}"#,
+            base64_auth("user", "pass")
+        ));
+        let auth = read_docker_config(&path, "registry.example.com").unwrap().unwrap();
+        assert_eq!(auth.username, "user");
+        assert_eq!(auth.password, "pass");
+    }
+
+    #[test]
+    fn test_read_docker_config_no_match() {
+        let path = write_config(r#"{"auths": {"other.registry.com": {"auth": "abc"}}}"#);
+        let auth = read_docker_config(&path, "registry.example.com").unwrap();
+        assert!(auth.is_none());
+    }
+
+    #[test]
+    fn test_read_docker_config_missing_auths() {
+        let path = write_config(r#"{}"#);
+        let auth = read_docker_config(&path, "registry.example.com").unwrap();
+        assert!(auth.is_none());
+    }
+}

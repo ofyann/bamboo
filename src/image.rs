@@ -89,3 +89,54 @@ impl FromStr for ImageRef {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_empty_input() {
+        let err = ImageRef::from_str("").unwrap_err();
+        assert!(err.to_string().contains("empty"));
+    }
+
+    #[test]
+    fn test_whitespace_only() {
+        let err = ImageRef::from_str("   ").unwrap_err();
+        assert!(err.to_string().contains("empty"));
+    }
+
+    #[test]
+    fn test_default_latest_tag() {
+        let img = ImageRef::from_str("redis").unwrap();
+        assert_eq!(img.tag, "latest");
+    }
+
+    #[test]
+    fn test_multi_level_namespace() {
+        let img = ImageRef::from_str("docker.io/a/b/c/image:v1").unwrap();
+        assert_eq!(img.registry, "docker.io");
+        assert_eq!(img.namespace, "a/b/c");
+        assert_eq!(img.name, "image");
+        assert_eq!(img.tag, "v1");
+        assert_eq!(img.normalize().target_path(), "a/b/c/image");
+    }
+
+    #[test]
+    fn test_hubproxy_path_for_docker_io_library() {
+        let img = ImageRef::from_str("nginx:1.25").unwrap();
+        assert_eq!(img.hubproxy_path(), "library/nginx");
+    }
+
+    #[test]
+    fn test_hubproxy_path_for_custom_registry() {
+        let img = ImageRef::from_str("registry.example.com/myapp:v2").unwrap();
+        assert_eq!(img.hubproxy_path(), "registry.example.com/myapp");
+    }
+
+    #[test]
+    fn test_target_path_always_uses_normalized() {
+        let img = ImageRef::from_str("alpine").unwrap();
+        assert_eq!(img.target_path(), "library/alpine");
+    }
+}

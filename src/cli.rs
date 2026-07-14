@@ -19,11 +19,11 @@ pub struct SyncArgs {
     /// Image reference to sync, e.g. nginx:1.25 or quay.io/coreos/etcd:v3.5
     pub image: String,
 
-    /// HubProxy source registry
+    /// Source registry (e.g. a HubProxy mirror)
     #[arg(long, env = "BAMBOO_SOURCE_REGISTRY", default_value = "hubproxy.example.com")]
     pub source_registry: String,
 
-    /// Target local registry
+    /// Target registry (your private Docker Distribution)
     #[arg(long, env = "BAMBOO_TARGET_REGISTRY", default_value = "registry.example.com:5000")]
     pub target_registry: String,
 

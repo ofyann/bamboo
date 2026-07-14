@@ -10,7 +10,7 @@ The integration tests in this directory require external services and are marked
    docker run -d -p 5000:5000 --name registry registry:2
    ```
 
-2. Network access to the source registry (default: `hubproxy.example.com`).
+2. Network access to the source registry configured via `BAMBOO_SOURCE_REGISTRY`.
 
 ## Running
 

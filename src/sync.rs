@@ -14,8 +14,11 @@ pub async fn run(args: SyncArgs) -> Result<()> {
     let source_path = normalized.hubproxy_path();
     let target_path = normalized.target_path();
 
-    let source_uri = format!("https://{}/{}", args.source_registry, source_path);
-    let target_uri = format!("https://{}/{}", args.target_registry, target_path);
+    let source_scheme = if args.insecure_src { "http" } else { "https" };
+    let target_scheme = if args.insecure_dest { "http" } else { "https" };
+
+    let source_uri = format!("{}://{}/{}", source_scheme, args.source_registry, source_path);
+    let target_uri = format!("{}://{}/{}", target_scheme, args.target_registry, target_path);
 
     logging::info(&format!(
         "处理镜像: {} -> 目标: {}/{}",

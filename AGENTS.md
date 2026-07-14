@@ -54,6 +54,17 @@ tests/
 - Integration tests are marked `#[ignore]` and require real registries.
 - Direct HTTP client dependency is `http`; actual registry HTTP calls go through `oci-distribution`.
 
+## Release Process
+
+1. Update `CHANGELOG.md` and bump version in `Cargo.toml` if needed.
+2. Commit the changes.
+3. Create and push a version tag:
+   ```bash
+   git tag -a v0.1.0 -m "Release v0.1.0"
+   git push origin main --tags
+   ```
+4. GitHub Actions (`.github/workflows/release.yml`) will build an `x86_64-unknown-linux-gnu` release binary and attach it to a GitHub Release automatically.
+
 ## Files Not Tracked in Git
 
 The following files are intentionally ignored by git and should not be committed:

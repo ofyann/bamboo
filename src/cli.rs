@@ -31,11 +31,15 @@ pub struct SyncArgs {
     #[arg(long, short, default_value_t = false)]
     pub dry_run: bool,
 
+    /// Source registry credentials as user:pass
+    #[arg(long, env = "BAMBOO_SOURCE_CREDS")]
+    pub source_creds: Option<String>,
+
     /// Target registry credentials as user:pass
     #[arg(long, env = "BAMBOO_CREDS")]
     pub creds: Option<String>,
 
-    /// Path to docker config auth file
+    /// Path to docker config auth file (used for both source and target registries)
     #[arg(long, env = "BAMBOO_AUTHFILE", default_value = "~/.docker/config.json")]
     pub authfile: String,
 

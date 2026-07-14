@@ -67,14 +67,14 @@ impl RegistryClient {
     pub async fn copy_from(
         &self,
         source: &RegistryClient,
-        auth: &Option<Auth>,
+        source_auth: &Option<Auth>,
     ) -> Result<()> {
-        let registry_auth = auth_to_registry_auth(auth);
+        let source_registry_auth = auth_to_registry_auth(source_auth);
 
         // Pull the manifest raw so we can preserve multi-arch indexes verbatim.
         let (manifest_body, _digest) = source
             .client
-            .pull_manifest_raw(&source.reference, &RegistryAuth::Anonymous, ACCEPTED_MEDIA_TYPES)
+            .pull_manifest_raw(&source.reference, &source_registry_auth, ACCEPTED_MEDIA_TYPES)
             .await
             .map_err(|e| BambooError::Registry(format!("pull manifest failed: {e}")))?;
 
@@ -147,7 +147,7 @@ impl RegistryClient {
             }
             OciManifest::ImageIndex(index) => {
                 // Multi-arch image: copy each platform manifest by digest, then push the index.
-                self.copy_image_index(source, &index, &registry_auth)
+                self.copy_image_index(source, &index, &source_registry_auth)
                     .await?;
 
                 let content_type = HeaderValue::from_str(
@@ -172,7 +172,7 @@ impl RegistryClient {
         &self,
         source: &RegistryClient,
         index: &OciImageIndex,
-        _auth: &RegistryAuth,
+        source_auth: &RegistryAuth,
     ) -> Result<()> {
         for entry in &index.manifests {
             let digest = &entry.digest;
@@ -191,7 +191,7 @@ impl RegistryClient {
             // Pull the child manifest raw so its digest is preserved in the target.
             let (manifest_body, _) = source
                 .client
-                .pull_manifest_raw(&child_ref, &RegistryAuth::Anonymous, ACCEPTED_MEDIA_TYPES)
+                .pull_manifest_raw(&child_ref, source_auth, ACCEPTED_MEDIA_TYPES)
                 .await
                 .map_err(|e| {
                     BambooError::Registry(format!(

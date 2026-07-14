@@ -28,7 +28,12 @@ pub async fn run(args: SyncArgs) -> Result<()> {
         return Ok(());
     }
 
-    let auth = resolve_auth(args.creds.as_deref(), &args.authfile, &args.target_registry)?;
+    let source_auth = resolve_auth(
+        args.source_creds.as_deref(),
+        &args.authfile,
+        &args.source_registry,
+    )?;
+    let target_auth = resolve_auth(args.creds.as_deref(), &args.authfile, &args.target_registry)?;
 
     let source = RegistryClient::new(
         &args.source_registry,
@@ -43,8 +48,8 @@ pub async fn run(args: SyncArgs) -> Result<()> {
         args.insecure_dest,
     )?;
 
-    let src_digest = source.digest(&None).await?;
-    let dest_digest = target.digest(&auth).await?;
+    let src_digest = source.digest(&source_auth).await?;
+    let dest_digest = target.digest(&target_auth).await?;
 
     if let (Some(src), Some(dest)) = (&src_digest, &dest_digest) {
         if src == dest && !args.force {
@@ -60,7 +65,7 @@ pub async fn run(args: SyncArgs) -> Result<()> {
 
     let mut last_err = None;
     for attempt in 1..=args.retries {
-        match target.copy_from(&source, &auth).await {
+        match target.copy_from(&source, &source_auth).await {
             Ok(()) => {
                 logging::info("✅ 同步成功完成！");
                 return Ok(());

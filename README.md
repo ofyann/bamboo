@@ -87,8 +87,9 @@ bamboo sync --authfile /path/to/config.json nginx:1.25
 |---|---|
 | `BAMBOO_SOURCE_REGISTRY` | 源 Registry 地址 |
 | `BAMBOO_TARGET_REGISTRY` | 目标 Registry 地址 |
+| `BAMBOO_SOURCE_CREDS` | 源 Registry 认证，格式 `user:pass` |
 | `BAMBOO_CREDS` | 目标 Registry 认证，格式 `user:pass` |
-| `BAMBOO_AUTHFILE` | Docker 认证文件路径 |
+| `BAMBOO_AUTHFILE` | Docker 认证文件路径（同时用于源和目标） |
 | `BAMBOO_INSECURE_SRC` | 跳过源 Registry TLS 验证 |
 | `BAMBOO_INSECURE_DEST` | 跳过目标 Registry TLS 验证 |
 | `BAMBOO_RETRIES` | 失败重试次数，默认 3 |
@@ -98,11 +99,13 @@ bamboo sync --authfile /path/to/config.json nginx:1.25
 
 ## 认证方式
 
-工具支持两种认证方式，优先级如下：
+目标 Registry 支持三种认证方式，优先级如下：
 
 1. `--creds user:pass` 命令行参数
 2. `--authfile` 指定的 Docker config 文件（默认 `~/.docker/config.json`）
 3. 匿名访问
+
+源 Registry 默认匿名访问；如需认证，使用 `--source-creds user:pass`，同样也会读取 `--authfile` 中对应源 Registry 地址的凭据。
 
 ## 功能特性
 

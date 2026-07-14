@@ -23,6 +23,7 @@ shellexpand = "3.1"
 [dev-dependencies]
 axum = "0.7"
 sha2 = "0.10"
+tempfile = "3"
 
 [profile.release]
 strip = true

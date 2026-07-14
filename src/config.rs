@@ -2,7 +2,7 @@ use crate::error::{BambooError, Result};
 use serde::Deserialize;
 use std::path::Path;
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Clone)]
 pub struct ConfigFile {
     pub source_registry: Option<String>,
     pub target_registry: Option<String>,
@@ -14,6 +14,20 @@ pub struct ConfigFile {
     pub retries: Option<usize>,
     pub retry_delay: Option<String>,
     pub timeout: Option<String>,
+    pub continue_on_error: Option<bool>,
+    pub images: Option<Vec<ImageEntry>>,
+}
+
+#[derive(Debug, Default, Deserialize, Clone)]
+pub struct ImageEntry {
+    pub image: String,
+    pub source_registry: Option<String>,
+    pub target_registry: Option<String>,
+    pub source_creds: Option<String>,
+    pub creds: Option<String>,
+    pub authfile: Option<String>,
+    pub insecure_src: Option<bool>,
+    pub insecure_dest: Option<bool>,
 }
 
 impl ConfigFile {
@@ -72,6 +86,65 @@ fn set_env(key: &str, value: &str) {
     }
 }
 
+impl ConfigFile {
+    /// Merge another config into this one.
+    ///
+    /// - Global scalar fields: later values overwrite earlier ones.
+    /// - `images`: append, allowing multiple files to contribute images.
+    pub fn merge(&mut self, other: &ConfigFile) {
+        if let Some(v) = other.source_registry.clone() {
+            self.source_registry = Some(v);
+        }
+        if let Some(v) = other.target_registry.clone() {
+            self.target_registry = Some(v);
+        }
+        if let Some(v) = other.source_creds.clone() {
+            self.source_creds = Some(v);
+        }
+        if let Some(v) = other.creds.clone() {
+            self.creds = Some(v);
+        }
+        if let Some(v) = other.authfile.clone() {
+            self.authfile = Some(v);
+        }
+        if let Some(v) = other.insecure_src {
+            self.insecure_src = Some(v);
+        }
+        if let Some(v) = other.insecure_dest {
+            self.insecure_dest = Some(v);
+        }
+        if let Some(v) = other.retries {
+            self.retries = Some(v);
+        }
+        if let Some(v) = other.retry_delay.clone() {
+            self.retry_delay = Some(v);
+        }
+        if let Some(v) = other.timeout.clone() {
+            self.timeout = Some(v);
+        }
+        if let Some(v) = other.continue_on_error {
+            self.continue_on_error = Some(v);
+        }
+        if let Some(v) = other.images.clone() {
+            self.images.get_or_insert_with(Vec::new).extend(v);
+        }
+    }
+
+    /// Load multiple config files and merge them into a single config.
+    pub fn load_many(paths: &[String]) -> Result<Self> {
+        if paths.is_empty() {
+            return Err(BambooError::Auth("至少需要一个配置文件".to_string()));
+        }
+
+        let mut merged = ConfigFile::default();
+        for path in paths {
+            let cfg = ConfigFile::from_path(path)?;
+            merged.merge(&cfg);
+        }
+        Ok(merged)
+    }
+}
+
 /// Pre-parse CLI arguments to find `--config <path>` or `BAMBOO_CONFIG`,
 /// then load the config file and apply its values to environment variables.
 ///
@@ -105,6 +178,100 @@ fn load_and_apply(path: &str) -> Result<()> {
     let config = ConfigFile::from_path(path)?;
     config.apply_to_env();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn write_temp_config(content: &str) -> tempfile::NamedTempFile {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(content.as_bytes()).unwrap();
+        file
+    }
+
+    #[test]
+    fn test_merge_globals_last_wins() {
+        let mut base = ConfigFile {
+            source_registry: Some("base.example.com".to_string()),
+            retries: Some(3),
+            ..Default::default()
+        };
+        let override_cfg = ConfigFile {
+            source_registry: Some("override.example.com".to_string()),
+            retries: Some(5),
+            ..Default::default()
+        };
+        base.merge(&override_cfg);
+        assert_eq!(base.source_registry, Some("override.example.com".to_string()));
+        assert_eq!(base.retries, Some(5));
+    }
+
+    #[test]
+    fn test_merge_images_appended() {
+        let mut base = ConfigFile {
+            images: Some(vec![ImageEntry {
+                image: "nginx:1.25".to_string(),
+                ..Default::default()
+            }]),
+            ..Default::default()
+        };
+        let extra = ConfigFile {
+            images: Some(vec![ImageEntry {
+                image: "redis:7".to_string(),
+                ..Default::default()
+            }]),
+            ..Default::default()
+        };
+        base.merge(&extra);
+        let images = base.images.unwrap();
+        assert_eq!(images.len(), 2);
+        assert_eq!(images[0].image, "nginx:1.25");
+        assert_eq!(images[1].image, "redis:7");
+    }
+
+    #[test]
+    fn test_load_many_merges_configs() {
+        let base = write_temp_config(
+            r#"
+source_registry = "hubproxy.example.com"
+target_registry = "registry.example.com:5000"
+"#,
+        );
+        let images = write_temp_config(
+            r#"
+continue_on_error = true
+
+[[images]]
+image = "nginx:1.25"
+
+[[images]]
+image = "redis:7"
+source_registry = "mirror-a.example.com"
+"#,
+        );
+
+        let merged = ConfigFile::load_many(&[
+            base.path().to_string_lossy().to_string(),
+            images.path().to_string_lossy().to_string(),
+        ])
+        .unwrap();
+
+        assert_eq!(merged.source_registry, Some("hubproxy.example.com".to_string()));
+        assert_eq!(merged.target_registry, Some("registry.example.com:5000".to_string()));
+        assert_eq!(merged.continue_on_error, Some(true));
+        let imgs = merged.images.unwrap();
+        assert_eq!(imgs.len(), 2);
+        assert_eq!(imgs[1].image, "redis:7");
+        assert_eq!(imgs[1].source_registry, Some("mirror-a.example.com".to_string()));
+    }
+
+    #[test]
+    fn test_load_many_empty_paths_errors() {
+        let result = ConfigFile::load_many(&[]);
+        assert!(result.is_err());
+    }
 }
 
 /// Generate a default config file template.

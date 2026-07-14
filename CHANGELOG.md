@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `bamboo sync-all` subcommand for batch syncing images from a configuration list.
+- Support for loading and merging multiple TOML config files via repeated `--config`.
+- Image list configuration with `[[images]]` entries and optional per-image source/target registry and credential overrides.
+- `continue_on_error` option in the image list config to control whether batch sync stops on the first failure.
+
 ## [0.2.0] - 2026-07-14
 
 ### Added

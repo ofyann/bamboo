@@ -5,6 +5,7 @@ mod image;
 mod auth;
 mod registry;
 mod sync;
+mod sync_all;
 mod logging;
 mod init;
 
@@ -26,6 +27,17 @@ async fn main() {
             };
             logging::set_level(level);
             sync::run(args).await
+        }
+        Commands::SyncAll(args) => {
+            let level = if args.quiet {
+                logging::LogLevel::Warn
+            } else if args.verbose {
+                logging::LogLevel::Debug
+            } else {
+                logging::LogLevel::Info
+            };
+            logging::set_level(level);
+            sync_all::run(args).await
         }
         Commands::Init(args) => init::run(args),
     };

@@ -126,6 +126,77 @@ bamboo sync --quiet nginx:1.25
 bamboo sync --verbose nginx:1.25
 ```
 
+## 批量同步（sync-all）
+
+除了同步单个镜像，`bamboo` 还支持按配置文件里的列表批量同步。适合用 cron / systemd timer 做定时同步。
+
+### 基础配置（`base.toml`）
+
+放全局的源/目标 Registry 和鉴权信息，使用现有的 `bamboo.toml` 格式：
+
+```toml
+source_registry = "hubproxy.example.com"
+target_registry = "registry.example.com:5000"
+creds = "user:pass"
+retries = 3
+retry_delay = "5s"
+timeout = "10m"
+```
+
+### 镜像列表配置（`images.toml`）
+
+只放要同步的镜像列表，以及需要覆盖的参数：
+
+```toml
+continue_on_error = false
+
+[[images]]
+image = "nginx:1.25"
+
+[[images]]
+image = "redis:7"
+# 这个镜像单独指定目标 Registry
+source_registry = "mirror-a.example.com"
+target_registry = "local-redis.example.com:5000"
+```
+
+每个 `[[images]]` 支持的字段：
+
+| 字段 | 说明 |
+|---|---|
+| `image` | 必填，镜像引用，例如 `nginx:1.25` |
+| `source_registry` | 可选，覆盖全局源 Registry |
+| `target_registry` | 可选，覆盖全局目标 Registry |
+| `source_creds` | 可选，覆盖源 Registry 认证 |
+| `creds` | 可选，覆盖目标 Registry 认证 |
+| `authfile` | 可选，覆盖 Docker 认证文件路径 |
+| `insecure_src` | 可选，覆盖源 TLS 设置 |
+| `insecure_dest` | 可选，覆盖目标 TLS 设置 |
+
+### 执行批量同步
+
+```bash
+bamboo sync-all --config base.toml --config images.toml
+```
+
+空跑检查：
+
+```bash
+bamboo sync-all --config base.toml --config images.toml --dry-run
+```
+
+多个 `--config` 会按顺序合并：全局字段后者覆盖前者，`images` 列表会追加。
+
+### 结合 cron 定时同步
+
+例如每天凌晨 2 点执行：
+
+```cron
+0 2 * * * /usr/local/bin/bamboo sync-all --config /etc/bamboo/base.toml --config /etc/bamboo/images.toml
+```
+
+`continue_on_error = true` 时，单个镜像失败会继续同步剩余镜像，最后统一输出失败列表；默认 `false`，失败即终止。
+
 ## 环境变量
 
 所有命令行参数都支持对应的环境变量：

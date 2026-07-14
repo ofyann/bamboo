@@ -13,6 +13,7 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     Sync(SyncArgs),
+    SyncAll(SyncAllArgs),
     Init(InitArgs),
 }
 
@@ -72,6 +73,25 @@ pub struct SyncArgs {
     /// 即使 digest 一致也强制同步
     #[arg(long, default_value_t = false)]
     pub force: bool,
+
+    /// 只输出 WARN 及以上级别日志
+    #[arg(long, short, conflicts_with = "verbose", default_value_t = false)]
+    pub quiet: bool,
+
+    /// 输出 DEBUG 级别日志
+    #[arg(long, short, conflicts_with = "quiet", default_value_t = false)]
+    pub verbose: bool,
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct SyncAllArgs {
+    /// 要加载的 TOML 配置文件，可多次指定，后加载的配置会覆盖前者同名全局字段，images 会追加
+    #[arg(long, env = "BAMBOO_CONFIG", required = true, action = clap::ArgAction::Append)]
+    pub config: Vec<String>,
+
+    /// 空跑模式：仅打印将要同步的镜像和解析后的源/目标地址
+    #[arg(long, short, default_value_t = false)]
+    pub dry_run: bool,
 
     /// 只输出 WARN 及以上级别日志
     #[arg(long, short, conflicts_with = "verbose", default_value_t = false)]

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Source registry authentication via `--source-creds` and `BAMBOO_SOURCE_CREDS`.
+- `--version` / `-V` flag to print the CLI version.
+
+### Changed
+
+- `--dry-run` now prints `http://` or `https://` based on `--insecure-src` / `--insecure-dest`.
+
+### Fixed
+
+- Multi-arch image sync now preserves child manifest digests, keeping index references valid.
+
+### Removed
+
+- Unused `--parallel-copies` CLI parameter.
+
 ## [0.1.0] - 2026-07-14
 
 ### Added

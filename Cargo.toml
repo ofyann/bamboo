@@ -11,14 +11,14 @@ reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
-chrono = "0.4"
+time = { version = "0.3", features = ["formatting", "macros"] }
 base64 = "0.22"
-url = "2.5"
 humantime = "2.1"
 shellexpand = "3.1"
 
 [profile.release]
 strip = true
 lto = true
+codegen-units = 1
+opt-level = "z"
+panic = "abort"

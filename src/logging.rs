@@ -1,17 +1,23 @@
-use chrono::Local;
+use std::time::SystemTime;
 
 fn timestamp() -> String {
-    Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+    let now = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = now.as_secs();
+    let datetime = time::OffsetDateTime::from_unix_timestamp(secs as i64).unwrap_or(time::OffsetDateTime::UNIX_EPOCH);
+    datetime.format(&time::format_description::well_known::Rfc3339)
+        .unwrap_or_else(|_| secs.to_string())
 }
 
 pub fn info(msg: &str) {
-    println!("{} \u{001b}[32m[INFO]\u{001b}[0m {}", timestamp(), msg);
+    println!("{} [INFO] {}", timestamp(), msg);
 }
 
 pub fn warn(msg: &str) {
-    eprintln!("{} \u{001b}[33m[WARN]\u{001b}[0m {}", timestamp(), msg);
+    eprintln!("{} [WARN] {}", timestamp(), msg);
 }
 
 pub fn error(msg: &str) {
-    eprintln!("{} \u{001b}[31m[ERROR]\u{001b}[0m {}", timestamp(), msg);
+    eprintln!("{} [ERROR] {}", timestamp(), msg);
 }

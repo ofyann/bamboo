@@ -4,18 +4,38 @@
 
 ## 安装
 
-### 方式一：下载预编译二进制
+### 方式一：直接下载并安装（Linux x86_64）
 
-从 [GitHub Releases](https://github.com/ofyann/bamboo/releases) 下载对应平台的二进制文件，解压后放入 `PATH` 即可。
+从 [GitHub Releases](https://github.com/ofyann/bamboo/releases) 下载对应版本的原始二进制和 `.sha256` 校验文件，校验通过后安装到 `/usr/local/bin`：
 
 ```bash
-# Linux x86_64 示例
-wget https://github.com/ofyann/bamboo/releases/download/v0.1.0/bamboo-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
-tar xzf bamboo-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
-mv bamboo /usr/local/bin/
+VERSION="v0.2.0"
+BINARY="bamboo-${VERSION}-x86_64-unknown-linux-gnu"
+
+curl -fsSL -O "https://github.com/ofyann/bamboo/releases/download/${VERSION}/${BINARY}" \
+  -O "https://github.com/ofyann/bamboo/releases/download/${VERSION}/${BINARY}.sha256" \
+  && sha256sum -c "${BINARY}.sha256" \
+  && chmod +x "${BINARY}" \
+  && sudo mv "${BINARY}" /usr/local/bin/bamboo
 ```
 
-### 方式二：从源码编译
+将 `v0.2.0` 替换为实际要安装的 release 版本号。
+
+### 方式二：使用 install.sh 脚本
+
+如果希望自动查询 latest release 并安装，可以使用仓库中的 `install.sh`：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ofyann/bamboo/main/install.sh | bash
+```
+
+安装目录默认为 `/usr/local/bin`，可通过 `INSTALL_DIR` 修改：
+
+```bash
+INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/ofyann/bamboo/main/install.sh | bash
+```
+
+### 方式三：从源码编译
 
 ```bash
 git clone https://github.com/ofyann/bamboo.git

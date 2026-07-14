@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `--dry-run` now prints `http://` or `https://` based on `--insecure-src` / `--insecure-dest`.
+- Release workflow now uploads the raw executable binary along with a `.sha256` checksum file instead of a tarball.
+- README 一键安装改为直接串联的下载/校验/安装命令，`install.sh` 作为备选方案保留。
 
 ### Fixed
 

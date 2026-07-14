@@ -4,6 +4,7 @@ use std::time::Duration;
 #[derive(Parser, Debug)]
 #[command(name = "bamboo")]
 #[command(about = "Sync container images between registries")]
+#[command(version)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,

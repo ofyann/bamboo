@@ -16,7 +16,6 @@ const ACCEPTED_MEDIA_TYPES: &[&str] = &[
 pub struct RegistryClient {
     client: Client,
     reference: Reference,
-    insecure: bool,
 }
 
 impl RegistryClient {
@@ -42,7 +41,6 @@ impl RegistryClient {
         Ok(Self {
             client,
             reference,
-            insecure,
         })
     }
 

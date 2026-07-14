@@ -3,7 +3,7 @@ use std::time::Duration;
 
 #[derive(Parser, Debug)]
 #[command(name = "bamboo")]
-#[command(about = "Sync container images between registries")]
+#[command(about = "在 OCI Registry 之间同步容器镜像")]
 #[command(version)]
 pub struct Cli {
     #[command(subcommand)]
@@ -17,50 +17,50 @@ pub enum Commands {
 
 #[derive(Parser, Debug, Clone)]
 pub struct SyncArgs {
-    /// Image reference to sync, e.g. nginx:1.25 or quay.io/coreos/etcd:v3.5
+    /// 要同步的镜像引用，例如 nginx:1.25 或 quay.io/coreos/etcd:v3.5
     pub image: String,
 
-    /// Source registry (e.g. a HubProxy mirror)
+    /// 源 Registry 地址（例如 HubProxy 镜像代理）
     #[arg(long, env = "BAMBOO_SOURCE_REGISTRY", default_value = "hubproxy.example.com")]
     pub source_registry: String,
 
-    /// Target registry (your private Docker Distribution)
+    /// 目标 Registry 地址（你的私有 Docker Distribution）
     #[arg(long, env = "BAMBOO_TARGET_REGISTRY", default_value = "registry.example.com:5000")]
     pub target_registry: String,
 
-    /// Dry run: only print source and target URIs
+    /// 空跑模式：仅打印解析后的源/目标地址，不执行同步
     #[arg(long, short, default_value_t = false)]
     pub dry_run: bool,
 
-    /// Source registry credentials as user:pass
+    /// 源 Registry 认证，格式 user:pass
     #[arg(long, env = "BAMBOO_SOURCE_CREDS")]
     pub source_creds: Option<String>,
 
-    /// Target registry credentials as user:pass
+    /// 目标 Registry 认证，格式 user:pass
     #[arg(long, env = "BAMBOO_CREDS")]
     pub creds: Option<String>,
 
-    /// Path to docker config auth file (used for both source and target registries)
+    /// Docker 认证文件路径（同时用于源和目标 Registry）
     #[arg(long, env = "BAMBOO_AUTHFILE", default_value = "~/.docker/config.json")]
     pub authfile: String,
 
-    /// Skip TLS verification for source registry
+    /// 跳过源 Registry 的 TLS 验证
     #[arg(long, env = "BAMBOO_INSECURE_SRC", default_value_t = false)]
     pub insecure_src: bool,
 
-    /// Skip TLS verification for target registry
+    /// 跳过目标 Registry 的 TLS 验证
     #[arg(long, env = "BAMBOO_INSECURE_DEST", default_value_t = false)]
     pub insecure_dest: bool,
 
-    /// Number of retries on failure
+    /// 失败时的重试次数
     #[arg(long, env = "BAMBOO_RETRIES", default_value_t = 3)]
     pub retries: usize,
 
-    /// Delay between retries
+    /// 重试间隔
     #[arg(long, env = "BAMBOO_RETRY_DELAY", value_parser = parse_duration, default_value = "5s")]
     pub retry_delay: Duration,
 
-    /// Force sync even if digests match
+    /// 即使 digest 一致也强制同步
     #[arg(long, default_value_t = false)]
     pub force: bool,
 }

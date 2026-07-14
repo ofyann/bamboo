@@ -29,11 +29,17 @@ curl -fsSL -O "https://github.com/ofyann/bamboo/releases/download/${VERSION}/${B
 curl -fsSL https://raw.githubusercontent.com/ofyann/bamboo/main/install.sh | bash
 ```
 
-安装目录默认为 `/usr/local/bin`，可通过 `INSTALL_DIR` 修改：
+安装目录默认为 `/usr/local/bin`，可通过 `INSTALL_DIR` 修改；默认查询最新 release，也可通过 `VERSION` 指定版本：
 
 ```bash
+# 安装到自定义目录
 INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/ofyann/bamboo/main/install.sh | bash
+
+# 安装指定版本
+VERSION=v0.2.0 curl -fsSL https://raw.githubusercontent.com/ofyann/bamboo/main/install.sh | bash
 ```
+
+脚本会校验下载文件的 sha256、备份旧版本、并在安装后执行 `bamboo --version` 验证。
 
 ### 方式三：从源码编译
 

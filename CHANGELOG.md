@@ -39,6 +39,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--insecure-src` / `--insecure-dest` now mean "use HTTP protocol", matching the original skopeo script semantics.
 - `--skip-tls-verify-src` / `--skip-tls-verify-dest` are introduced for HTTPS + skip certificate verification.
 - `BAMBOO_INSECURE_SRC` / `BAMBOO_INSECURE_DEST` environment variables now map to HTTP mode.
+- Refactored `src/registry.rs` into a directory module with a `Registry` trait, `OciRegistry` adapter, `InMemoryRegistry` test fake, and `ManifestCopier` for copy logic.
+- `sync::run` now builds `RepositoryRef` and drives `ManifestCopier` through the `Registry` trait seam instead of calling `RegistryClient::copy_from` directly.
+- Introduced `SyncEngine` module to centralize retry, timeout, and batch concurrency control; `sync.rs` and `sync_all.rs` are now thin adapters that delegate to the engine.
+- `sync_all` failure aggregation and `continue_on_error` behavior are now covered by unit tests.
+- Replaced the global `LOG_LEVEL` static with `tracing`: `logging.rs` now initializes a subscriber, and `SyncEngine`/`ManifestCopier` use `tracing::info_span!` for per-image and per-platform log context, removing the `prefix` parameter from `ManifestCopier`.
+- Added `tracing` and `tracing-subscriber` dependencies.
 
 ## [0.2.0] - 2026-07-14
 

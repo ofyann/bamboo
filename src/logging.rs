@@ -1,83 +1,74 @@
-use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::SystemTime;
-
-static LOG_LEVEL: AtomicU8 = AtomicU8::new(LogLevel::Info as u8);
+use tracing::Level;
+use tracing_subscriber::fmt::time::FormatTime;
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[repr(u8)]
 pub enum LogLevel {
-    Error = 0,
-    Warn = 1,
-    Info = 2,
-    Debug = 3,
+    Error,
+    Warn,
+    Info,
+    Debug,
 }
 
 impl LogLevel {
-    fn current() -> Self {
-        match LOG_LEVEL.load(Ordering::Relaxed) {
-            0 => LogLevel::Error,
-            1 => LogLevel::Warn,
-            3 => LogLevel::Debug,
-            _ => LogLevel::Info,
+    pub fn to_tracing_level(self) -> Level {
+        match self {
+            LogLevel::Error => Level::ERROR,
+            LogLevel::Warn => Level::WARN,
+            LogLevel::Info => Level::INFO,
+            LogLevel::Debug => Level::DEBUG,
         }
     }
 }
 
-pub fn set_level(level: LogLevel) {
-    LOG_LEVEL.store(level as u8, Ordering::Relaxed);
-}
-
-/// Initialize the log level from CLI-style quiet/verbose flags.
-///
-/// - `quiet = true`  -> Warn
-/// - `verbose = true` -> Debug
-/// - both false/none  -> Info
-pub fn init_from_flags(quiet: Option<bool>, verbose: Option<bool>) {
-    let level = match (quiet, verbose) {
+/// 根据 quiet/verbose 标志决定日志级别。
+pub fn level_from_flags(quiet: Option<bool>, verbose: Option<bool>) -> LogLevel {
+    match (quiet, verbose) {
         (_, Some(true)) => LogLevel::Debug,
         (Some(true), _) => LogLevel::Warn,
         _ => LogLevel::Info,
-    };
-    set_level(level);
+    }
 }
 
-fn timestamp() -> String {
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default();
-    let secs = now.as_secs();
-    match time::OffsetDateTime::from_unix_timestamp(secs as i64) {
-        Ok(datetime) => {
-            const FORMAT: &[time::format_description::FormatItem<'_>] =
-                time::macros::format_description!("[year]-[month]-[day] [hour]:[minute]:[second]");
-            datetime
-                .format(&FORMAT)
-                .unwrap_or_else(|_| secs.to_string())
+/// 初始化 tracing subscriber，保持与原先类似的时间戳+级别输出格式。
+pub fn init_subscriber(level: LogLevel) {
+    let filter = EnvFilter::default().add_directive(level.to_tracing_level().into());
+
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .with_timer(BambooTimer)
+        .with_target(false)
+        .with_thread_ids(false)
+        .with_thread_names(false)
+        .with_level(true)
+        .with_writer(std::io::stdout);
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(fmt_layer)
+        .init();
+}
+
+struct BambooTimer;
+
+impl FormatTime for BambooTimer {
+    fn format_time(&self, w: &mut tracing_subscriber::fmt::format::Writer<'_>) -> std::fmt::Result {
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default();
+        let secs = now.as_secs();
+        match time::OffsetDateTime::from_unix_timestamp(secs as i64) {
+            Ok(datetime) => {
+                const FORMAT: &[time::format_description::FormatItem<'_>] = time::macros::format_description!(
+                    "[year]-[month]-[day] [hour]:[minute]:[second]"
+                );
+                let s = datetime
+                    .format(&FORMAT)
+                    .unwrap_or_else(|_| secs.to_string());
+                write!(w, "{}", s)
+            }
+            Err(_) => write!(w, "{}", secs),
         }
-        Err(_) => secs.to_string(),
-    }
-}
-
-pub fn debug(msg: &str) {
-    if LogLevel::current() >= LogLevel::Debug {
-        println!("{} [DEBUG] {}", timestamp(), msg);
-    }
-}
-
-pub fn info(msg: &str) {
-    if LogLevel::current() >= LogLevel::Info {
-        println!("{} [INFO] {}", timestamp(), msg);
-    }
-}
-
-pub fn warn(msg: &str) {
-    if LogLevel::current() >= LogLevel::Warn {
-        eprintln!("{} [WARN] {}", timestamp(), msg);
-    }
-}
-
-pub fn error(msg: &str) {
-    if LogLevel::current() >= LogLevel::Error {
-        eprintln!("{} [ERROR] {}", timestamp(), msg);
     }
 }

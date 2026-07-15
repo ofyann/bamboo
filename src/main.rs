@@ -7,14 +7,16 @@ async fn main() {
 
     let result = match cli.command {
         Commands::Sync(args) => {
-            bamboo::logging::init_from_flags(args.quiet, args.verbose);
+            let level = bamboo::logging::level_from_flags(args.quiet, args.verbose);
+            bamboo::logging::init_subscriber(level);
             match bamboo::config_resolver::resolve_sync(&args).await {
                 Ok(spec) => bamboo::sync::run(spec).await,
                 Err(e) => Err(e),
             }
         }
         Commands::SyncAll(args) => {
-            bamboo::logging::init_from_flags(args.quiet, args.verbose);
+            let level = bamboo::logging::level_from_flags(args.quiet, args.verbose);
+            bamboo::logging::init_subscriber(level);
             match bamboo::config_resolver::resolve_sync_all(&args).await {
                 Ok((specs, options)) => bamboo::sync_all::run(specs, options).await,
                 Err(e) => Err(e),
@@ -24,7 +26,7 @@ async fn main() {
     };
 
     if let Err(e) = result {
-        bamboo::logging::error(&e.to_string());
+        tracing::error!("{}", e);
         std::process::exit(1);
     }
 }

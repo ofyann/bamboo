@@ -10,4 +10,5 @@ pub mod logging;
 pub mod registry;
 pub mod sync;
 pub mod sync_all;
+pub mod sync_engine;
 pub mod sync_spec;

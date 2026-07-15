@@ -1,12 +1,13 @@
 mod common;
 
-use bamboo::registry::RegistryClient;
+use bamboo::registry::{ManifestCopier, OciRegistry, Registry, RepositoryRef};
 use common::mock_registry::MockRegistry;
 use std::collections::HashMap;
 
 const MANIFEST_MEDIA_TYPE: &str = "application/vnd.docker.distribution.manifest.v2+json";
 const CONFIG_MEDIA_TYPE: &str = "application/vnd.docker.container.image.v1+json";
 const LAYER_MEDIA_TYPE: &str = "application/vnd.docker.image.rootfs.diff.tar.gzip";
+const INDEX_MEDIA_TYPE: &str = "application/vnd.docker.distribution.manifest.list.v2+json";
 
 fn sha256_hex(data: &[u8]) -> String {
     use sha2::{Digest, Sha256};
@@ -100,7 +101,9 @@ fn sample_child_manifest(arch: &str, layer: Vec<u8>) -> (Vec<u8>, HashMap<String
     (manifest, blobs)
 }
 
-const INDEX_MEDIA_TYPE: &str = "application/vnd.docker.distribution.manifest.list.v2+json";
+fn repo_ref(registry: &str, repository: &str, tag: &str) -> RepositoryRef {
+    RepositoryRef::with_tag(registry, repository, tag)
+}
 
 #[tokio::test]
 async fn test_digest_skip_when_manifests_match() {
@@ -123,11 +126,13 @@ async fn test_digest_skip_when_manifests_match() {
         blobs,
     );
 
-    let source = RegistryClient::new(&src.base_url(), "library/nginx", "1.25", true, false).unwrap();
-    let target = RegistryClient::new(&dest.base_url(), "library/nginx", "1.25", true, false).unwrap();
+    let source = OciRegistry::new(true, false);
+    let target = OciRegistry::new(true, false);
+    let source_ref = repo_ref(&src.base_url(), "library/nginx", "1.25");
+    let target_ref = repo_ref(&dest.base_url(), "library/nginx", "1.25");
 
-    let src_digest = source.digest(&None).await.unwrap();
-    let dest_digest = target.digest(&None).await.unwrap();
+    let src_digest = source.digest(&source_ref, &None).await.unwrap();
+    let dest_digest = target.digest(&target_ref, &None).await.unwrap();
 
     assert!(src_digest.is_some());
     assert_eq!(src_digest, dest_digest);
@@ -147,16 +152,19 @@ async fn test_copy_single_arch_image() {
         blobs,
     );
 
-    let source = RegistryClient::new(&src.base_url(), "library/nginx", "1.25", true, false).unwrap();
-    let target = RegistryClient::new(&dest.base_url(), "library/nginx", "1.25", true, false).unwrap();
+    let source = OciRegistry::new(true, false);
+    let target = OciRegistry::new(true, false);
+    let source_ref = repo_ref(&src.base_url(), "library/nginx", "1.25");
+    let target_ref = repo_ref(&dest.base_url(), "library/nginx", "1.25");
 
-    let src_digest = source.digest(&None).await.unwrap();
+    let src_digest = source.digest(&source_ref, &None).await.unwrap();
     assert!(src_digest.is_some());
-    assert!(target.digest(&None).await.unwrap().is_none());
+    assert!(target.digest(&target_ref, &None).await.unwrap().is_none());
 
-    target.copy_from(&source, &None).await.unwrap();
+    let copier = ManifestCopier::new(&source, &target, &None, &None);
+    copier.copy(&source_ref, &target_ref).await.unwrap();
 
-    let dest_digest = target.digest(&None).await.unwrap();
+    let dest_digest = target.digest(&target_ref, &None).await.unwrap();
     assert_eq!(src_digest, dest_digest);
 
     let (stored_digest, stored_manifest) = dest.manifest("library/nginx", "1.25").unwrap();
@@ -230,15 +238,18 @@ async fn test_copy_multi_arch_image_index() {
         HashMap::new(),
     );
 
-    let source = RegistryClient::new(&src.base_url(), "library/nginx", "1.25", true, false).unwrap();
-    let target = RegistryClient::new(&dest.base_url(), "library/nginx", "1.25", true, false).unwrap();
+    let source = OciRegistry::new(true, false);
+    let target = OciRegistry::new(true, false);
+    let source_ref = repo_ref(&src.base_url(), "library/nginx", "1.25");
+    let target_ref = repo_ref(&dest.base_url(), "library/nginx", "1.25");
 
-    let src_digest = source.digest(&None).await.unwrap();
-    assert!(target.digest(&None).await.unwrap().is_none());
+    let src_digest = source.digest(&source_ref, &None).await.unwrap();
+    assert!(target.digest(&target_ref, &None).await.unwrap().is_none());
 
-    target.copy_from(&source, &None).await.unwrap();
+    let copier = ManifestCopier::new(&source, &target, &None, &None);
+    copier.copy(&source_ref, &target_ref).await.unwrap();
 
-    let dest_digest = target.digest(&None).await.unwrap();
+    let dest_digest = target.digest(&target_ref, &None).await.unwrap();
     assert_eq!(src_digest, dest_digest);
 
     let (_, stored_index) = dest.manifest("library/nginx", "1.25").unwrap();

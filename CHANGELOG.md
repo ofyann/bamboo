@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-15
+
 ### Added
 
 - `bamboo sync-all` subcommand for batch syncing images from a configuration list.
@@ -16,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--jobs` / `BAMBOO_JOBS` flag to control concurrency for `sync-all`.
 - Environment variable overrides for `sync-all` global settings.
 - `--target-creds` as the primary flag for target registry credentials, with `--creds` kept as a visible alias.
+- `--skip-tls-verify-src` / `--skip-tls-verify-dest` flags for HTTPS + skip certificate verification.
+- `Registry` trait, `OciRegistry` adapter, `InMemoryRegistry` test fake, and `ManifestCopier` for copy logic.
+- `SyncEngine` module to centralize retry, timeout, and batch concurrency control.
+- `tracing` and `tracing-subscriber` dependencies; per-image and per-platform log spans.
 - CI workflow with `cargo test`, `cargo fmt --check`, and `cargo clippy -- -D warnings`.
 
 ### Changed
@@ -26,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `bamboo sync` and `bamboo sync-all` now read Docker config and TOML config files via `tokio::fs` instead of blocking `std::fs`.
 - Refactored `registry.rs` to share single-arch and multi-arch child manifest copy logic through `copy_single_manifest`.
 - `--retries` help text now clarifies it means maximum attempts (0 still runs once).
+- `--insecure-src` / `--insecure-dest` now mean "use HTTP protocol", matching the original skopeo script semantics.
+- `BAMBOO_INSECURE_SRC` / `BAMBOO_INSECURE_DEST` environment variables now map to HTTP mode.
+- `sync.rs` and `sync_all.rs` are now thin adapters that delegate to `SyncEngine`.
+- Replaced the global `LOG_LEVEL` static with `tracing`; `logging.rs` now initializes a subscriber.
 
 ### Fixed
 
@@ -33,18 +43,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sync-all` now correctly passes `--force`, `--quiet`, and `--verbose` to each individual sync.
 - `tests/sync_integration_test.rs` now checks `stdout` instead of `stderr` for the success log.
 - Docker config `auth` fields that are not valid `user:pass` base64 are now rejected with an error instead of being silently ignored.
-
-### Changed
-
-- `--insecure-src` / `--insecure-dest` now mean "use HTTP protocol", matching the original skopeo script semantics.
-- `--skip-tls-verify-src` / `--skip-tls-verify-dest` are introduced for HTTPS + skip certificate verification.
-- `BAMBOO_INSECURE_SRC` / `BAMBOO_INSECURE_DEST` environment variables now map to HTTP mode.
-- Refactored `src/registry.rs` into a directory module with a `Registry` trait, `OciRegistry` adapter, `InMemoryRegistry` test fake, and `ManifestCopier` for copy logic.
-- `sync::run` now builds `RepositoryRef` and drives `ManifestCopier` through the `Registry` trait seam instead of calling `RegistryClient::copy_from` directly.
-- Introduced `SyncEngine` module to centralize retry, timeout, and batch concurrency control; `sync.rs` and `sync_all.rs` are now thin adapters that delegate to the engine.
-- `sync_all` failure aggregation and `continue_on_error` behavior are now covered by unit tests.
-- Replaced the global `LOG_LEVEL` static with `tracing`: `logging.rs` now initializes a subscriber, and `SyncEngine`/`ManifestCopier` use `tracing::info_span!` for per-image and per-platform log context, removing the `prefix` parameter from `ManifestCopier`.
-- Added `tracing` and `tracing-subscriber` dependencies.
 
 ## [0.2.0] - 2026-07-14
 

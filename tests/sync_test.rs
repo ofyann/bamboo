@@ -13,7 +13,10 @@ fn sha256_hex(data: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(data);
     let result = hasher.finalize();
-    let hex = result.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+    let hex = result
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>();
     format!("sha256:{}", hex)
 }
 
@@ -105,11 +108,23 @@ async fn test_digest_skip_when_manifests_match() {
     let dest = MockRegistry::start().await;
 
     let (manifest, blobs) = sample_image();
-    src.add_image("library/nginx", "1.25", MANIFEST_MEDIA_TYPE, manifest.clone(), blobs.clone());
-    dest.add_image("library/nginx", "1.25", MANIFEST_MEDIA_TYPE, manifest, blobs);
+    src.add_image(
+        "library/nginx",
+        "1.25",
+        MANIFEST_MEDIA_TYPE,
+        manifest.clone(),
+        blobs.clone(),
+    );
+    dest.add_image(
+        "library/nginx",
+        "1.25",
+        MANIFEST_MEDIA_TYPE,
+        manifest,
+        blobs,
+    );
 
-    let source = RegistryClient::new(&src.base_url(), "library/nginx", "1.25", true).unwrap();
-    let target = RegistryClient::new(&dest.base_url(), "library/nginx", "1.25", true).unwrap();
+    let source = RegistryClient::new(&src.base_url(), "library/nginx", "1.25", true, false).unwrap();
+    let target = RegistryClient::new(&dest.base_url(), "library/nginx", "1.25", true, false).unwrap();
 
     let src_digest = source.digest(&None).await.unwrap();
     let dest_digest = target.digest(&None).await.unwrap();
@@ -124,10 +139,16 @@ async fn test_copy_single_arch_image() {
     let dest = MockRegistry::start().await;
 
     let (manifest, blobs) = sample_image();
-    src.add_image("library/nginx", "1.25", MANIFEST_MEDIA_TYPE, manifest.clone(), blobs);
+    src.add_image(
+        "library/nginx",
+        "1.25",
+        MANIFEST_MEDIA_TYPE,
+        manifest.clone(),
+        blobs,
+    );
 
-    let source = RegistryClient::new(&src.base_url(), "library/nginx", "1.25", true).unwrap();
-    let target = RegistryClient::new(&dest.base_url(), "library/nginx", "1.25", true).unwrap();
+    let source = RegistryClient::new(&src.base_url(), "library/nginx", "1.25", true, false).unwrap();
+    let target = RegistryClient::new(&dest.base_url(), "library/nginx", "1.25", true, false).unwrap();
 
     let src_digest = source.digest(&None).await.unwrap();
     assert!(src_digest.is_some());
@@ -187,7 +208,13 @@ async fn test_copy_multi_arch_image_index() {
     all_blobs.extend(amd64_blobs);
     all_blobs.extend(arm64_blobs);
 
-    src.add_image("library/nginx", "1.25", INDEX_MEDIA_TYPE, index.clone(), all_blobs);
+    src.add_image(
+        "library/nginx",
+        "1.25",
+        INDEX_MEDIA_TYPE,
+        index.clone(),
+        all_blobs,
+    );
     src.add_image(
         "library/nginx",
         &amd64_digest,
@@ -203,8 +230,8 @@ async fn test_copy_multi_arch_image_index() {
         HashMap::new(),
     );
 
-    let source = RegistryClient::new(&src.base_url(), "library/nginx", "1.25", true).unwrap();
-    let target = RegistryClient::new(&dest.base_url(), "library/nginx", "1.25", true).unwrap();
+    let source = RegistryClient::new(&src.base_url(), "library/nginx", "1.25", true, false).unwrap();
+    let target = RegistryClient::new(&dest.base_url(), "library/nginx", "1.25", true, false).unwrap();
 
     let src_digest = source.digest(&None).await.unwrap();
     assert!(target.digest(&None).await.unwrap().is_none());

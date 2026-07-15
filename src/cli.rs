@@ -26,13 +26,13 @@ pub struct SyncArgs {
     #[arg(long, env = "BAMBOO_CONFIG")]
     pub config: Option<String>,
 
-    /// 源 Registry 地址（例如 HubProxy 镜像代理）
-    #[arg(long, env = "BAMBOO_SOURCE_REGISTRY", default_value = "hubproxy.example.com")]
-    pub source_registry: String,
+    /// 源 Registry 地址（例如 HubProxy 镜像代理），默认 hubproxy.example.com
+    #[arg(long, env = "BAMBOO_SOURCE_REGISTRY")]
+    pub source_registry: Option<String>,
 
-    /// 目标 Registry 地址（你的私有 Docker Distribution）
-    #[arg(long, env = "BAMBOO_TARGET_REGISTRY", default_value = "registry.example.com:5000")]
-    pub target_registry: String,
+    /// 目标 Registry 地址（你的私有 Docker Distribution），默认 registry.example.com:5000
+    #[arg(long, env = "BAMBOO_TARGET_REGISTRY")]
+    pub target_registry: Option<String>,
 
     /// 空跑模式：仅打印解析后的源/目标地址，不执行同步
     #[arg(long, short, default_value_t = false)]
@@ -43,44 +43,52 @@ pub struct SyncArgs {
     pub source_creds: Option<String>,
 
     /// 目标 Registry 认证，格式 user:pass
-    #[arg(long, env = "BAMBOO_CREDS")]
+    #[arg(long = "target-creds", visible_alias = "creds", env = "BAMBOO_CREDS")]
     pub creds: Option<String>,
 
-    /// Docker 认证文件路径（同时用于源和目标 Registry）
-    #[arg(long, env = "BAMBOO_AUTHFILE", default_value = "~/.docker/config.json")]
-    pub authfile: String,
+    /// Docker 认证文件路径（同时用于源和目标 Registry），默认 ~/.docker/config.json
+    #[arg(long, env = "BAMBOO_AUTHFILE")]
+    pub authfile: Option<String>,
 
-    /// 跳过源 Registry 的 TLS 验证
-    #[arg(long, env = "BAMBOO_INSECURE_SRC", default_value_t = false)]
-    pub insecure_src: bool,
+    /// 源 Registry 使用 HTTP 协议
+    #[arg(long, env = "BAMBOO_INSECURE_SRC", num_args = 0..=1, default_missing_value = "true")]
+    pub insecure_src: Option<bool>,
 
-    /// 跳过目标 Registry 的 TLS 验证
-    #[arg(long, env = "BAMBOO_INSECURE_DEST", default_value_t = false)]
-    pub insecure_dest: bool,
+    /// 目标 Registry 使用 HTTP 协议
+    #[arg(long, env = "BAMBOO_INSECURE_DEST", num_args = 0..=1, default_missing_value = "true")]
+    pub insecure_dest: Option<bool>,
 
-    /// 失败时的重试次数
-    #[arg(long, env = "BAMBOO_RETRIES", default_value_t = 3)]
-    pub retries: usize,
+    /// 跳过源 Registry 的 TLS 证书校验（仍使用 HTTPS）
+    #[arg(long, env = "BAMBOO_SKIP_TLS_VERIFY_SRC", num_args = 0..=1, default_missing_value = "true")]
+    pub skip_tls_verify_src: Option<bool>,
 
-    /// 重试间隔
-    #[arg(long, env = "BAMBOO_RETRY_DELAY", value_parser = parse_duration, default_value = "5s")]
-    pub retry_delay: Duration,
+    /// 跳过目标 Registry 的 TLS 证书校验（仍使用 HTTPS）
+    #[arg(long, env = "BAMBOO_SKIP_TLS_VERIFY_DEST", num_args = 0..=1, default_missing_value = "true")]
+    pub skip_tls_verify_dest: Option<bool>,
 
-    /// 同步超时时间，0 表示不超时
-    #[arg(long, env = "BAMBOO_TIMEOUT", value_parser = parse_duration, default_value = "10m")]
-    pub timeout: Duration,
+    /// 失败时的最大尝试次数（包含首次执行），0 也会尝试一次，默认 3
+    #[arg(long, env = "BAMBOO_RETRIES")]
+    pub retries: Option<usize>,
+
+    /// 重试间隔，默认 5s
+    #[arg(long, env = "BAMBOO_RETRY_DELAY", value_parser = parse_duration)]
+    pub retry_delay: Option<Duration>,
+
+    /// 同步超时时间，0 表示不超时，默认 10m
+    #[arg(long, env = "BAMBOO_TIMEOUT", value_parser = parse_duration)]
+    pub timeout: Option<Duration>,
 
     /// 即使 digest 一致也强制同步
     #[arg(long, default_value_t = false)]
     pub force: bool,
 
     /// 只输出 WARN 及以上级别日志
-    #[arg(long, short, conflicts_with = "verbose", default_value_t = false)]
-    pub quiet: bool,
+    #[arg(long, short, conflicts_with = "verbose", env = "BAMBOO_QUIET", num_args = 0..=1, default_missing_value = "true")]
+    pub quiet: Option<bool>,
 
     /// 输出 DEBUG 级别日志
-    #[arg(long, short, conflicts_with = "quiet", default_value_t = false)]
-    pub verbose: bool,
+    #[arg(long, short, conflicts_with = "quiet", env = "BAMBOO_VERBOSE", num_args = 0..=1, default_missing_value = "true")]
+    pub verbose: Option<bool>,
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -93,13 +101,37 @@ pub struct SyncAllArgs {
     #[arg(long, short, default_value_t = false)]
     pub dry_run: bool,
 
+    /// 即使 digest 一致也强制同步所有镜像
+    #[arg(long, default_value_t = false)]
+    pub force: bool,
+
+    /// 并发同步的镜像数量，默认 3
+    #[arg(long, env = "BAMBOO_JOBS")]
+    pub jobs: Option<usize>,
+
+    /// 源 Registry 使用 HTTP 协议
+    #[arg(long, env = "BAMBOO_INSECURE_SRC", num_args = 0..=1, default_missing_value = "true")]
+    pub insecure_src: Option<bool>,
+
+    /// 目标 Registry 使用 HTTP 协议
+    #[arg(long, env = "BAMBOO_INSECURE_DEST", num_args = 0..=1, default_missing_value = "true")]
+    pub insecure_dest: Option<bool>,
+
+    /// 跳过源 Registry 的 TLS 证书校验（仍使用 HTTPS）
+    #[arg(long, env = "BAMBOO_SKIP_TLS_VERIFY_SRC", num_args = 0..=1, default_missing_value = "true")]
+    pub skip_tls_verify_src: Option<bool>,
+
+    /// 跳过目标 Registry 的 TLS 证书校验（仍使用 HTTPS）
+    #[arg(long, env = "BAMBOO_SKIP_TLS_VERIFY_DEST", num_args = 0..=1, default_missing_value = "true")]
+    pub skip_tls_verify_dest: Option<bool>,
+
     /// 只输出 WARN 及以上级别日志
-    #[arg(long, short, conflicts_with = "verbose", default_value_t = false)]
-    pub quiet: bool,
+    #[arg(long, short, conflicts_with = "verbose", env = "BAMBOO_QUIET", num_args = 0..=1, default_missing_value = "true")]
+    pub quiet: Option<bool>,
 
     /// 输出 DEBUG 级别日志
-    #[arg(long, short, conflicts_with = "quiet", default_value_t = false)]
-    pub verbose: bool,
+    #[arg(long, short, conflicts_with = "quiet", env = "BAMBOO_VERBOSE", num_args = 0..=1, default_missing_value = "true")]
+    pub verbose: Option<bool>,
 }
 
 #[derive(Parser, Debug, Clone)]

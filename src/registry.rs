@@ -1,11 +1,11 @@
 use crate::auth::Auth;
 use crate::error::{BambooError, Result};
 use crate::logging;
+use http::header::HeaderValue;
 use oci_distribution::client::{Client, ClientConfig, ClientProtocol};
 use oci_distribution::manifest::{OciImageIndex, OciImageManifest, OciManifest};
 use oci_distribution::secrets::RegistryAuth;
 use oci_distribution::Reference;
-use http::header::HeaderValue;
 
 const ACCEPTED_MEDIA_TYPES: &[&str] = &[
     "application/vnd.docker.distribution.manifest.list.v2+json",
@@ -20,7 +20,13 @@ pub struct RegistryClient {
 }
 
 impl RegistryClient {
-    pub fn new(registry: &str, image_path: &str, tag: &str, insecure: bool) -> Result<Self> {
+    pub fn new(
+        registry: &str,
+        image_path: &str,
+        tag: &str,
+        insecure: bool,
+        skip_tls_verify: bool,
+    ) -> Result<Self> {
         let reference_str = format!("{}/{image_path}:{tag}", registry);
         let reference: Reference = reference_str
             .parse()
@@ -34,15 +40,14 @@ impl RegistryClient {
 
         let config = ClientConfig {
             protocol,
+            accept_invalid_hostnames: skip_tls_verify,
+            accept_invalid_certificates: skip_tls_verify,
             ..Default::default()
         };
 
         let client = Client::new(config);
 
-        Ok(Self {
-            client,
-            reference,
-        })
+        Ok(Self { client, reference })
     }
 
     pub async fn digest(&self, auth: &Option<Auth>) -> Result<Option<String>> {
@@ -53,11 +58,12 @@ impl RegistryClient {
             .await
         {
             Ok(digest) => Ok(Some(digest)),
-            Err(oci_distribution::errors::OciDistributionError::RegistryError { envelope, .. })
-                if envelope
-                    .errors
-                    .iter()
-                    .any(|e| e.code == oci_distribution::errors::OciErrorCode::ManifestUnknown) =>
+            Err(oci_distribution::errors::OciDistributionError::RegistryError {
+                envelope, ..
+            }) if envelope
+                .errors
+                .iter()
+                .any(|e| e.code == oci_distribution::errors::OciErrorCode::ManifestUnknown) =>
             {
                 Ok(None)
             }
@@ -75,7 +81,11 @@ impl RegistryClient {
         // Pull the manifest raw so we can preserve multi-arch indexes verbatim.
         let (manifest_body, _digest) = source
             .client
-            .pull_manifest_raw(&source.reference, &source_registry_auth, ACCEPTED_MEDIA_TYPES)
+            .pull_manifest_raw(
+                &source.reference,
+                &source_registry_auth,
+                ACCEPTED_MEDIA_TYPES,
+            )
             .await
             .map_err(|e| BambooError::Registry(format!("拉取 manifest 失败: {e}")))?;
 
@@ -85,101 +95,14 @@ impl RegistryClient {
         match &manifest {
             OciManifest::Image(_) => {
                 logging::debug("同步单架构镜像");
-                // Single-arch image: copy blobs by digest and push the manifest raw
-                // so the destination digest matches the source.
-                let manifest: OciImageManifest = serde_json::from_slice(&manifest_body)
-                    .map_err(|e| BambooError::Registry(format!("解析 manifest 失败: {e}")))?;
-
-                let mut config = Vec::new();
-                logging::info(&format!(
-                    "拉取 config {} ({} bytes)...",
-                    manifest.config.digest, manifest.config.size
-                ));
-                source
-                    .client
-                    .pull_blob(&source.reference, &manifest.config, &mut config)
-                    .await
-                    .map_err(|e| {
-                        BambooError::Registry(format!(
-                            "拉取 config {} 失败: {}",
-                            manifest.config.digest, e
-                        ))
-                    })?;
-                logging::info(&format!(
-                    "拉取 config {} 完成",
-                    manifest.config.digest
-                ));
-
-                logging::info(&format!(
-                    "推送 config {} ({} bytes)...",
-                    manifest.config.digest, config.len()
-                ));
-                self.client
-                    .push_blob(&self.reference, &config, &manifest.config.digest)
-                    .await
-                    .map_err(|e| {
-                        BambooError::Registry(format!(
-                            "推送 config {} 失败: {}",
-                            manifest.config.digest, e
-                        ))
-                    })?;
-                logging::info(&format!(
-                    "推送 config {} 完成",
-                    manifest.config.digest
-                ));
-
-                for layer in &manifest.layers {
-                    let mut data = Vec::new();
-                    logging::info(&format!(
-                        "拉取 layer {} ({} bytes)...",
-                        layer.digest, layer.size
-                    ));
-                    source
-                        .client
-                        .pull_blob(&source.reference, layer, &mut data)
-                        .await
-                        .map_err(|e| {
-                            BambooError::Registry(format!(
-                                "拉取 layer {} 失败: {}",
-                                layer.digest, e
-                            ))
-                        })?;
-                    logging::info(&format!(
-                        "拉取 layer {} 完成",
-                        layer.digest
-                    ));
-
-                    logging::info(&format!(
-                        "推送 layer {} ({} bytes)...",
-                        layer.digest, data.len()
-                    ));
-                    self.client
-                        .push_blob(&self.reference, &data, &layer.digest)
-                        .await
-                        .map_err(|e| {
-                            BambooError::Registry(format!(
-                                "推送 layer {} 失败: {}",
-                                layer.digest, e
-                            ))
-                        })?;
-                    logging::info(&format!(
-                        "推送 layer {} 完成",
-                        layer.digest
-                    ));
-                }
-
-                let content_type = HeaderValue::from_str(
-                    manifest
-                        .media_type
-                        .as_deref()
-                        .unwrap_or("application/vnd.oci.image.manifest.v1+json"),
+                self.copy_single_manifest(
+                    source,
+                    &source.reference,
+                    &self.reference,
+                    &manifest_body,
+                    "",
                 )
-                .map_err(|e| BambooError::Registry(format!("Content-Type 无效: {e}")))?;
-
-                self.client
-                    .push_manifest_raw(&self.reference, manifest_body, content_type)
-                    .await
-                    .map_err(|e| BambooError::Registry(format!("推送 manifest 失败: {e}")))?;
+                .await?;
             }
             OciManifest::ImageIndex(index) => {
                 logging::debug(&format!(
@@ -204,6 +127,108 @@ impl RegistryClient {
                     .map_err(|e| BambooError::Registry(format!("推送 manifest index 失败: {e}")))?;
             }
         }
+
+        Ok(())
+    }
+
+    /// Copy a single image manifest (config + layers + manifest raw) from source to target.
+    async fn copy_single_manifest(
+        &self,
+        source: &RegistryClient,
+        source_ref: &Reference,
+        target_ref: &Reference,
+        manifest_body: &[u8],
+        prefix: &str,
+    ) -> Result<()> {
+        let manifest: OciImageManifest = serde_json::from_slice(manifest_body)
+            .map_err(|e| BambooError::Registry(format!("{prefix}解析 manifest 失败: {e}")))?;
+
+        let mut config = Vec::new();
+        logging::info(&format!(
+            "{prefix}拉取 config {} ({} bytes)...",
+            manifest.config.digest, manifest.config.size
+        ));
+        source
+            .client
+            .pull_blob(source_ref, &manifest.config, &mut config)
+            .await
+            .map_err(|e| {
+                BambooError::Registry(format!(
+                    "{prefix}拉取 config {} 失败: {}",
+                    manifest.config.digest, e
+                ))
+            })?;
+        logging::info(&format!(
+            "{prefix}拉取 config {} 完成",
+            manifest.config.digest
+        ));
+
+        logging::info(&format!(
+            "{prefix}推送 config {} ({} bytes)...",
+            manifest.config.digest,
+            config.len()
+        ));
+        self.client
+            .push_blob(target_ref, &config, &manifest.config.digest)
+            .await
+            .map_err(|e| {
+                BambooError::Registry(format!(
+                    "{prefix}推送 config {} 失败: {}",
+                    manifest.config.digest, e
+                ))
+            })?;
+        logging::info(&format!(
+            "{prefix}推送 config {} 完成",
+            manifest.config.digest
+        ));
+
+        for layer in &manifest.layers {
+            let mut data = Vec::new();
+            logging::info(&format!(
+                "{prefix}拉取 layer {} ({} bytes)...",
+                layer.digest, layer.size
+            ));
+            source
+                .client
+                .pull_blob(source_ref, layer, &mut data)
+                .await
+                .map_err(|e| {
+                    BambooError::Registry(format!(
+                        "{prefix}拉取 layer {} 失败: {}",
+                        layer.digest, e
+                    ))
+                })?;
+            logging::info(&format!("{prefix}拉取 layer {} 完成", layer.digest));
+
+            logging::info(&format!(
+                "{prefix}推送 layer {} ({} bytes)...",
+                layer.digest,
+                data.len()
+            ));
+            self.client
+                .push_blob(target_ref, &data, &layer.digest)
+                .await
+                .map_err(|e| {
+                    BambooError::Registry(format!(
+                        "{prefix}推送 layer {} 失败: {}",
+                        layer.digest, e
+                    ))
+                })?;
+            logging::info(&format!("{prefix}推送 layer {} 完成", layer.digest));
+        }
+
+        let content_type = HeaderValue::from_str(
+            manifest
+                .media_type
+                .as_deref()
+                .unwrap_or("application/vnd.oci.image.manifest.v1+json"),
+        )
+        .map_err(|e| BambooError::Registry(format!("{prefix}Content-Type 无效: {e}")))?;
+
+        self.client
+            .push_manifest_raw(target_ref, manifest_body.to_vec(), content_type)
+            .await
+            .map_err(|e| BambooError::Registry(format!("{prefix}推送 manifest 失败: {e}")))?;
 
         Ok(())
     }
@@ -234,120 +259,11 @@ impl RegistryClient {
                 .pull_manifest_raw(&child_ref, source_auth, ACCEPTED_MEDIA_TYPES)
                 .await
                 .map_err(|e| {
-                    BambooError::Registry(format!(
-                        "拉取子 manifest {} 失败: {}",
-                        digest, e
-                    ))
+                    BambooError::Registry(format!("拉取子 manifest {} 失败: {}", digest, e))
                 })?;
 
-            let manifest: OciImageManifest = serde_json::from_slice(&manifest_body)
-                .map_err(|e| {
-                    BambooError::Registry(format!(
-                        "解析子 manifest {} 失败: {}",
-                        digest, e
-                    ))
-                })?;
-
-            let mut config = Vec::new();
-            logging::info(&format!(
-                "拉取子 config {} ({} bytes)...",
-                manifest.config.digest, manifest.config.size
-            ));
-            source
-                .client
-                .pull_blob(&child_ref, &manifest.config, &mut config)
-                .await
-                .map_err(|e| {
-                    BambooError::Registry(format!(
-                        "拉取子 config {} 失败: {}",
-                        manifest.config.digest, e
-                    ))
-                })?;
-            logging::info(&format!(
-                "拉取子 config {} 完成",
-                manifest.config.digest
-            ));
-
-            logging::info(&format!(
-                "推送子 config {} ({} bytes)...",
-                manifest.config.digest, config.len()
-            ));
-            self.client
-                .push_blob(&target_child_ref, &config, &manifest.config.digest)
-                .await
-                .map_err(|e| {
-                    BambooError::Registry(format!(
-                        "推送子 config {} 失败: {}",
-                        manifest.config.digest, e
-                    ))
-                })?;
-            logging::info(&format!(
-                "推送子 config {} 完成",
-                manifest.config.digest
-            ));
-
-            for layer in &manifest.layers {
-                let mut data = Vec::new();
-                logging::info(&format!(
-                    "拉取子 layer {} ({} bytes)...",
-                    layer.digest, layer.size
-                ));
-                source
-                    .client
-                    .pull_blob(&child_ref, layer, &mut data)
-                    .await
-                    .map_err(|e| {
-                        BambooError::Registry(format!(
-                            "拉取子 layer {} 失败: {}",
-                            layer.digest, e
-                        ))
-                    })?;
-                logging::info(&format!(
-                    "拉取子 layer {} 完成",
-                    layer.digest
-                ));
-
-                logging::info(&format!(
-                    "推送子 layer {} ({} bytes)...",
-                    layer.digest, data.len()
-                ));
-                self.client
-                    .push_blob(&target_child_ref, &data, &layer.digest)
-                    .await
-                    .map_err(|e| {
-                        BambooError::Registry(format!(
-                            "推送子 layer {} 失败: {}",
-                            layer.digest, e
-                        ))
-                    })?;
-                logging::info(&format!(
-                    "推送子 layer {} 完成",
-                    layer.digest
-                ));
-            }
-
-            let content_type = HeaderValue::from_str(
-                manifest
-                    .media_type
-                    .as_deref()
-                    .unwrap_or("application/vnd.oci.image.manifest.v1+json"),
-            )
-            .map_err(|e| {
-                BambooError::Registry(format!(
-                    "子 manifest Content-Type 无效: {}",
-                    e
-                ))
-            })?;
-
-            self.client
-                .push_manifest_raw(&target_child_ref, manifest_body, content_type)
-                .await
-                .map_err(|e| {
-                    BambooError::Registry(format!(
-                        "推送子 manifest {} 失败: {}",
-                        digest, e
-                    ))
-                })?;
+            self.copy_single_manifest(source, &child_ref, &target_child_ref, &manifest_body, "子 ")
+                .await?;
         }
 
         Ok(())

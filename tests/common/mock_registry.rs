@@ -120,7 +120,9 @@ async fn handle_v2(
     body: Bytes,
 ) -> Response {
     let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-    let marker = segments.iter().position(|&s| s == "manifests" || s == "blobs");
+    let marker = segments
+        .iter()
+        .position(|&s| s == "manifests" || s == "blobs");
 
     match marker {
         Some(idx) if segments[idx] == "manifests" && idx + 1 < segments.len() => {
@@ -175,13 +177,20 @@ async fn handle_v2(
                 }
             }
         }
-        _ => oci_error(StatusCode::NOT_FOUND, "NAME_UNKNOWN", "repository name not known"),
+        _ => oci_error(
+            StatusCode::NOT_FOUND,
+            "NAME_UNKNOWN",
+            "repository name not known",
+        ),
     }
 }
 
 async fn head_manifest(state: Arc<Mutex<RegistryState>>, repo: &str, reference: &str) -> Response {
     let state = state.lock().unwrap();
-    match state.manifests.get(&(repo.to_string(), reference.to_string())) {
+    match state
+        .manifests
+        .get(&(repo.to_string(), reference.to_string()))
+    {
         Some(entry) => {
             let mut headers = HeaderMap::new();
             headers.insert(
@@ -194,13 +203,20 @@ async fn head_manifest(state: Arc<Mutex<RegistryState>>, repo: &str, reference: 
             );
             (StatusCode::OK, headers).into_response()
         }
-        None => oci_error(StatusCode::NOT_FOUND, "MANIFEST_UNKNOWN", "manifest unknown"),
+        None => oci_error(
+            StatusCode::NOT_FOUND,
+            "MANIFEST_UNKNOWN",
+            "manifest unknown",
+        ),
     }
 }
 
 async fn get_manifest(state: Arc<Mutex<RegistryState>>, repo: &str, reference: &str) -> Response {
     let state = state.lock().unwrap();
-    match state.manifests.get(&(repo.to_string(), reference.to_string())) {
+    match state
+        .manifests
+        .get(&(repo.to_string(), reference.to_string()))
+    {
         Some(entry) => {
             let mut headers = HeaderMap::new();
             headers.insert(
@@ -213,7 +229,11 @@ async fn get_manifest(state: Arc<Mutex<RegistryState>>, repo: &str, reference: &
             );
             (StatusCode::OK, headers, entry.body.clone()).into_response()
         }
-        None => oci_error(StatusCode::NOT_FOUND, "MANIFEST_UNKNOWN", "manifest unknown"),
+        None => oci_error(
+            StatusCode::NOT_FOUND,
+            "MANIFEST_UNKNOWN",
+            "manifest unknown",
+        ),
     }
 }
 
@@ -231,8 +251,14 @@ async fn get_blob(state: Arc<Mutex<RegistryState>>, digest: &str) -> Response {
     match state.blobs.get(digest) {
         Some(bytes) => {
             let mut headers = HeaderMap::new();
-            headers.insert("Content-Type", HeaderValue::from_static("application/octet-stream"));
-            headers.insert("Docker-Content-Digest", HeaderValue::from_str(digest).unwrap());
+            headers.insert(
+                "Content-Type",
+                HeaderValue::from_static("application/octet-stream"),
+            );
+            headers.insert(
+                "Docker-Content-Digest",
+                HeaderValue::from_str(digest).unwrap(),
+            );
             (StatusCode::OK, headers, bytes.clone()).into_response()
         }
         None => oci_error(StatusCode::NOT_FOUND, "BLOB_UNKNOWN", "blob unknown"),
@@ -272,7 +298,11 @@ async fn start_upload(state: Arc<Mutex<RegistryState>>, repo: &str) -> Response 
             .unwrap()
             .as_nanos()
     );
-    state.lock().unwrap().uploads.insert(uuid.clone(), Vec::new());
+    state
+        .lock()
+        .unwrap()
+        .uploads
+        .insert(uuid.clone(), Vec::new());
 
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -312,7 +342,10 @@ async fn finish_upload(
         "Location",
         HeaderValue::from_str(&format!("/v2/{}/blobs/{}", repo, digest)).unwrap(),
     );
-    headers.insert("Docker-Content-Digest", HeaderValue::from_str(&digest).unwrap());
+    headers.insert(
+        "Docker-Content-Digest",
+        HeaderValue::from_str(&digest).unwrap(),
+    );
     (StatusCode::CREATED, headers).into_response()
 }
 
@@ -349,12 +382,18 @@ async fn put_manifest(
         "Location",
         HeaderValue::from_str(&format!("/v2/{}/manifests/{}", repo, digest)).unwrap(),
     );
-    resp_headers.insert("Docker-Content-Digest", HeaderValue::from_str(&digest).unwrap());
+    resp_headers.insert(
+        "Docker-Content-Digest",
+        HeaderValue::from_str(&digest).unwrap(),
+    );
     (StatusCode::CREATED, resp_headers).into_response()
 }
 
 fn oci_error(status: StatusCode, code: &str, message: &str) -> Response {
-    let body = format!(r#"{{"errors":[{{"code":"{}","message":"{}"}}]}}"#, code, message);
+    let body = format!(
+        r#"{{"errors":[{{"code":"{}","message":"{}"}}]}}"#,
+        code, message
+    );
     (
         status,
         [("Content-Type", HeaderValue::from_static("application/json"))],
@@ -368,6 +407,9 @@ fn sha256_hex(data: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(data);
     let result = hasher.finalize();
-    let hex = result.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+    let hex = result
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>();
     format!("sha256:{}", hex)
 }

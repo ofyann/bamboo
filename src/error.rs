@@ -8,6 +8,9 @@ pub enum BambooError {
     #[error("认证失败: {0}")]
     Auth(String),
 
+    #[error("配置错误: {0}")]
+    Config(String),
+
     #[error("Registry 操作失败: {0}")]
     Registry(String),
 

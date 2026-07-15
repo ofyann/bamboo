@@ -30,5 +30,9 @@ async fn test_sync_nginx_to_local_registry() {
         stdout,
         stderr
     );
-    assert!(stderr.contains("同步成功完成"));
+    assert!(
+        stdout.contains("同步成功完成"),
+        "预期成功日志出现在 stdout，实际 stdout:\n{}",
+        stdout
+    );
 }

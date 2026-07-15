@@ -105,13 +105,17 @@ bamboo sync --help
 bamboo sync --force nginx:1.25
 
 # 使用账号密码认证目标 Registry
-bamboo sync --creds username:password nginx:1.25
+bamboo sync --target-creds username:password nginx:1.25
+# --creds 仍可作为别名使用
 
 # 源 Registry 也需要认证
 bamboo sync --source-creds username:password nginx:1.25
 
-# 跳过目标 Registry 的 TLS 验证（自建私服常用）
+# 目标 Registry 使用 HTTP 协议
 bamboo sync --insecure-dest nginx:1.25
+
+# 跳过目标 Registry 的 TLS 证书校验（仍使用 HTTPS，自建私服常用）
+bamboo sync --skip-tls-verify-dest nginx:1.25
 
 # 指定 docker config 认证文件
 bamboo sync --authfile /path/to/config.json nginx:1.25
@@ -170,8 +174,10 @@ target_registry = "local-redis.example.com:5000"
 | `source_creds` | 可选，覆盖源 Registry 认证 |
 | `creds` | 可选，覆盖目标 Registry 认证 |
 | `authfile` | 可选，覆盖 Docker 认证文件路径 |
-| `insecure_src` | 可选，覆盖源 TLS 设置 |
-| `insecure_dest` | 可选，覆盖目标 TLS 设置 |
+| `insecure_src` | 可选，源 Registry 使用 HTTP 协议 |
+| `insecure_dest` | 可选，目标 Registry 使用 HTTP 协议 |
+| `skip_tls_verify_src` | 可选，跳过源 TLS 证书校验（仍使用 HTTPS） |
+| `skip_tls_verify_dest` | 可选，跳过目标 TLS 证书校验（仍使用 HTTPS） |
 
 ### 执行批量同步
 
@@ -186,6 +192,8 @@ bamboo sync-all --config base.toml --config images.toml --dry-run
 ```
 
 多个 `--config` 会按顺序合并：全局字段后者覆盖前者，`images` 列表会追加。
+
+`sync-all` 同样会读取 `BAMBOO_SOURCE_REGISTRY`、`BAMBOO_TARGET_REGISTRY`、`BAMBOO_CREDS` 等环境变量，优先级为：**环境变量 > 配置文件 > 默认值**。
 
 ### 结合 cron 定时同步
 
@@ -209,8 +217,10 @@ bamboo sync-all --config base.toml --config images.toml --dry-run
 | `BAMBOO_SOURCE_CREDS` | 源 Registry 认证，格式 `user:pass` |
 | `BAMBOO_CREDS` | 目标 Registry 认证，格式 `user:pass` |
 | `BAMBOO_AUTHFILE` | Docker 认证文件路径（同时用于源和目标） |
-| `BAMBOO_INSECURE_SRC` | 跳过源 Registry TLS 验证 |
-| `BAMBOO_INSECURE_DEST` | 跳过目标 Registry TLS 验证 |
+| `BAMBOO_INSECURE_SRC` | 源 Registry 使用 HTTP 协议 |
+| `BAMBOO_INSECURE_DEST` | 目标 Registry 使用 HTTP 协议 |
+| `BAMBOO_SKIP_TLS_VERIFY_SRC` | 跳过源 Registry TLS 证书校验（仍使用 HTTPS） |
+| `BAMBOO_SKIP_TLS_VERIFY_DEST` | 跳过目标 Registry TLS 证书校验（仍使用 HTTPS） |
 | `BAMBOO_RETRIES` | 失败重试次数，默认 3 |
 | `BAMBOO_RETRY_DELAY` | 重试间隔，默认 5s |
 | `BAMBOO_TIMEOUT` | 同步超时时间，默认 10m，0 表示不超时 |
@@ -223,11 +233,13 @@ bamboo sync-all --config base.toml --config images.toml --dry-run
 
 目标 Registry 支持三种认证方式，优先级如下：
 
-1. `--creds user:pass` 命令行参数
+1. `--target-creds user:pass` 命令行参数（`--creds` 为兼容别名）
 2. `--authfile` 指定的 Docker config 文件（默认 `~/.docker/config.json`）
 3. 匿名访问
 
 源 Registry 默认匿名访问；如需认证，使用 `--source-creds user:pass`，同样也会读取 `--authfile` 中对应源 Registry 地址的凭据。
+
+> 注意：命令行直接传 `--target-creds` 会暴露在 shell history 和进程列表中，生产环境建议优先使用 `--authfile` 或 `BAMBOO_CREDS` 环境变量。
 
 ## 功能特性
 
@@ -247,8 +259,8 @@ bamboo sync-all --config base.toml --config images.toml --dry-run
 |---|---|
 | `sync.sh nginx:1.25` | `bamboo sync nginx:1.25` |
 | `--dry-run` | `bamboo sync --dry-run nginx:1.25` |
-| `INSECURE_DEST=true` | `bamboo sync --insecure-dest nginx:1.25` |
-| `DEST_CREDS=user:pass` | `bamboo sync --creds user:pass nginx:1.25` |
+| `INSECURE_DEST=true` | `bamboo sync --skip-tls-verify-dest nginx:1.25` |
+| `DEST_CREDS=user:pass` | `bamboo sync --target-creds user:pass nginx:1.25` |
 | `MAX_RETRIES=3` | 默认 3 次，可通过 `--retries` 修改 |
 
 ## 发布记录
@@ -258,5 +270,6 @@ bamboo sync-all --config base.toml --config images.toml --dry-run
 ## 注意事项
 
 - 默认地址是占位符，使用前必须通过参数或环境变量配置真实 Registry。
-- 目标 Registry 如果是自建私服且使用自签名证书，通常需要加 `--insecure-dest`。
+- 目标 Registry 如果是自建私服且使用自签名证书，通常需要加 `--skip-tls-verify-dest` 以跳过 TLS 证书校验。
+- `--insecure-src` / `--insecure-dest` 表示使用 HTTP 协议，与 `--skip-tls-verify-*` 不同。
 - 集成测试需要真实 Registry，默认被忽略。

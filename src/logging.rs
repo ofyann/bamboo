@@ -27,6 +27,20 @@ pub fn set_level(level: LogLevel) {
     LOG_LEVEL.store(level as u8, Ordering::Relaxed);
 }
 
+/// Initialize the log level from CLI-style quiet/verbose flags.
+///
+/// - `quiet = true`  -> Warn
+/// - `verbose = true` -> Debug
+/// - both false/none  -> Info
+pub fn init_from_flags(quiet: Option<bool>, verbose: Option<bool>) {
+    let level = match (quiet, verbose) {
+        (_, Some(true)) => LogLevel::Debug,
+        (Some(true), _) => LogLevel::Warn,
+        _ => LogLevel::Info,
+    };
+    set_level(level);
+}
+
 fn timestamp() -> String {
     let now = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -36,7 +50,9 @@ fn timestamp() -> String {
         Ok(datetime) => {
             const FORMAT: &[time::format_description::FormatItem<'_>] =
                 time::macros::format_description!("[year]-[month]-[day] [hour]:[minute]:[second]");
-            datetime.format(&FORMAT).unwrap_or_else(|_| secs.to_string())
+            datetime
+                .format(&FORMAT)
+                .unwrap_or_else(|_| secs.to_string())
         }
         Err(_) => secs.to_string(),
     }

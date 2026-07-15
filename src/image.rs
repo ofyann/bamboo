@@ -39,6 +39,10 @@ impl ImageRef {
     pub fn target_path(&self) -> String {
         self.normalize().image_path()
     }
+
+    pub fn image_path_with_tag(&self) -> String {
+        format!("{}:{}", self.image_path(), self.tag)
+    }
 }
 
 impl FromStr for ImageRef {

@@ -1,7 +1,13 @@
+pub mod auth;
 pub mod cli;
+pub mod config;
+pub mod config_resolver;
+pub mod defaults;
 pub mod error;
 pub mod image;
-pub mod auth;
+pub mod init;
+pub mod logging;
 pub mod registry;
 pub mod sync;
-pub mod logging;
+pub mod sync_all;
+pub mod sync_spec;

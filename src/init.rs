@@ -9,10 +9,7 @@ pub fn run(args: InitArgs) -> Result<()> {
     if path.exists() && !args.force {
         return Err(BambooError::Io(std::io::Error::new(
             std::io::ErrorKind::AlreadyExists,
-            format!(
-                "配置文件 {} 已存在，请加 --force 覆盖",
-                path.display()
-            ),
+            format!("配置文件 {} 已存在，请加 --force 覆盖", path.display()),
         )));
     }
 

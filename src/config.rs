@@ -11,6 +11,8 @@ pub struct ConfigFile {
     pub authfile: Option<String>,
     pub insecure_src: Option<bool>,
     pub insecure_dest: Option<bool>,
+    pub skip_tls_verify_src: Option<bool>,
+    pub skip_tls_verify_dest: Option<bool>,
     pub retries: Option<usize>,
     pub retry_delay: Option<String>,
     pub timeout: Option<String>,
@@ -28,65 +30,85 @@ pub struct ImageEntry {
     pub authfile: Option<String>,
     pub insecure_src: Option<bool>,
     pub insecure_dest: Option<bool>,
+    pub skip_tls_verify_src: Option<bool>,
+    pub skip_tls_verify_dest: Option<bool>,
 }
 
 impl ConfigFile {
     /// Load a TOML config file from the given path.
-    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let contents = std::fs::read_to_string(path.as_ref())?;
+    pub async fn from_path<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let contents = tokio::fs::read_to_string(path.as_ref()).await?;
         toml::from_str(&contents).map_err(|e| {
-            BambooError::Auth(format!(
+            BambooError::Config(format!(
                 "配置文件 {} 格式错误: {}",
                 path.as_ref().display(),
                 e
             ))
         })
     }
-
-    /// Apply config values to environment variables, but only if the env var
-    /// is not already set. This preserves the precedence:
-    /// CLI args > env vars > config file > defaults.
-    pub fn apply_to_env(&self) {
-        if let Some(v) = &self.source_registry {
-            set_env("BAMBOO_SOURCE_REGISTRY", v);
-        }
-        if let Some(v) = &self.target_registry {
-            set_env("BAMBOO_TARGET_REGISTRY", v);
-        }
-        if let Some(v) = &self.source_creds {
-            set_env("BAMBOO_SOURCE_CREDS", v);
-        }
-        if let Some(v) = &self.creds {
-            set_env("BAMBOO_CREDS", v);
-        }
-        if let Some(v) = &self.authfile {
-            set_env("BAMBOO_AUTHFILE", v);
-        }
-        if let Some(v) = self.insecure_src {
-            set_env("BAMBOO_INSECURE_SRC", if v { "true" } else { "false" });
-        }
-        if let Some(v) = self.insecure_dest {
-            set_env("BAMBOO_INSECURE_DEST", if v { "true" } else { "false" });
-        }
-        if let Some(v) = self.retries {
-            set_env("BAMBOO_RETRIES", &v.to_string());
-        }
-        if let Some(v) = &self.retry_delay {
-            set_env("BAMBOO_RETRY_DELAY", v);
-        }
-        if let Some(v) = &self.timeout {
-            set_env("BAMBOO_TIMEOUT", v);
-        }
-    }
-}
-
-fn set_env(key: &str, value: &str) {
-    if std::env::var(key).is_err() {
-        std::env::set_var(key, value);
-    }
 }
 
 impl ConfigFile {
+    /// Apply environment variable overrides on top of the merged config.
+    ///
+    /// This gives the same precedence as `bamboo sync`:
+    /// CLI args > env vars > config file > defaults.
+    /// For `sync-all`, there are no per-field CLI args, so env vars override config.
+    pub fn apply_env_overrides(&mut self) {
+        if let Ok(v) = std::env::var("BAMBOO_SOURCE_REGISTRY") {
+            if !v.is_empty() {
+                self.source_registry = Some(v);
+            }
+        }
+        if let Ok(v) = std::env::var("BAMBOO_TARGET_REGISTRY") {
+            if !v.is_empty() {
+                self.target_registry = Some(v);
+            }
+        }
+        if let Ok(v) = std::env::var("BAMBOO_SOURCE_CREDS") {
+            if !v.is_empty() {
+                self.source_creds = Some(v);
+            }
+        }
+        if let Ok(v) = std::env::var("BAMBOO_CREDS") {
+            if !v.is_empty() {
+                self.creds = Some(v);
+            }
+        }
+        if let Ok(v) = std::env::var("BAMBOO_AUTHFILE") {
+            if !v.is_empty() {
+                self.authfile = Some(v);
+            }
+        }
+        if let Ok(v) = std::env::var("BAMBOO_INSECURE_SRC") {
+            self.insecure_src = Some(v == "true" || v == "1");
+        }
+        if let Ok(v) = std::env::var("BAMBOO_INSECURE_DEST") {
+            self.insecure_dest = Some(v == "true" || v == "1");
+        }
+        if let Ok(v) = std::env::var("BAMBOO_SKIP_TLS_VERIFY_SRC") {
+            self.skip_tls_verify_src = Some(v == "true" || v == "1");
+        }
+        if let Ok(v) = std::env::var("BAMBOO_SKIP_TLS_VERIFY_DEST") {
+            self.skip_tls_verify_dest = Some(v == "true" || v == "1");
+        }
+        if let Ok(v) = std::env::var("BAMBOO_RETRIES") {
+            if let Ok(n) = v.parse::<usize>() {
+                self.retries = Some(n);
+            }
+        }
+        if let Ok(v) = std::env::var("BAMBOO_RETRY_DELAY") {
+            if !v.is_empty() {
+                self.retry_delay = Some(v);
+            }
+        }
+        if let Ok(v) = std::env::var("BAMBOO_TIMEOUT") {
+            if !v.is_empty() {
+                self.timeout = Some(v);
+            }
+        }
+    }
+
     /// Merge another config into this one.
     ///
     /// - Global scalar fields: later values overwrite earlier ones.
@@ -113,6 +135,12 @@ impl ConfigFile {
         if let Some(v) = other.insecure_dest {
             self.insecure_dest = Some(v);
         }
+        if let Some(v) = other.skip_tls_verify_src {
+            self.skip_tls_verify_src = Some(v);
+        }
+        if let Some(v) = other.skip_tls_verify_dest {
+            self.skip_tls_verify_dest = Some(v);
+        }
         if let Some(v) = other.retries {
             self.retries = Some(v);
         }
@@ -131,53 +159,62 @@ impl ConfigFile {
     }
 
     /// Load multiple config files and merge them into a single config.
-    pub fn load_many(paths: &[String]) -> Result<Self> {
+    pub async fn load_many(paths: &[String]) -> Result<Self> {
         if paths.is_empty() {
-            return Err(BambooError::Auth("至少需要一个配置文件".to_string()));
+            return Err(BambooError::Config("至少需要一个配置文件".to_string()));
         }
 
         let mut merged = ConfigFile::default();
         for path in paths {
-            let cfg = ConfigFile::from_path(path)?;
+            let cfg = ConfigFile::from_path(path).await?;
             merged.merge(&cfg);
         }
         Ok(merged)
     }
 }
 
-/// Pre-parse CLI arguments to find `--config <path>` or `BAMBOO_CONFIG`,
-/// then load the config file and apply its values to environment variables.
-///
-/// This should be called before `Cli::parse()` so that clap can pick up the
-/// environment variables as usual.
-pub fn preload_from_args() {
-    let mut args = std::env::args().skip(1);
-    let mut config_path_from_cli: Option<String> = None;
+/// Generate a default config file template.
+pub fn default_template() -> &'static str {
+    r#"# bamboo 配置文件模板
+# 用法: bamboo sync --config ./bamboo.toml nginx:1.25
+# 优先级: 命令行参数 > 环境变量 > 本配置文件 > 默认值
 
-    while let Some(arg) = args.next() {
-        if arg == "--config" {
-            config_path_from_cli = args.next();
-        } else if let Some(value) = arg.strip_prefix("--config=") {
-            config_path_from_cli = Some(value.to_string());
-        }
-    }
+# 源 Registry 地址（例如 HubProxy 镜像代理）
+source_registry = "hubproxy.example.com"
 
-    let config_path = config_path_from_cli
-        .or_else(|| std::env::var("BAMBOO_CONFIG").ok())
-        .filter(|s| !s.is_empty());
+# 目标 Registry 地址（你的私有 Docker Distribution）
+target_registry = "registry.example.com:5000"
 
-    if let Some(path) = config_path {
-        if let Err(e) = load_and_apply(&path) {
-            eprintln!("加载配置文件失败: {}", e);
-            std::process::exit(1);
-        }
-    }
-}
+# 源 Registry 认证，格式 user:pass
+# source_creds = "user:pass"
 
-fn load_and_apply(path: &str) -> Result<()> {
-    let config = ConfigFile::from_path(path)?;
-    config.apply_to_env();
-    Ok(())
+# 目标 Registry 认证，格式 user:pass
+# creds = "user:pass"
+
+# Docker 认证文件路径（同时用于源和目标 Registry）
+authfile = "~/.docker/config.json"
+
+# 源 Registry 使用 HTTP 协议（与 skip_tls_verify 二选一）
+insecure_src = false
+
+# 目标 Registry 使用 HTTP 协议（与 skip_tls_verify 二选一）
+insecure_dest = false
+
+# 跳过源 Registry 的 TLS 证书校验（仍使用 HTTPS）
+skip_tls_verify_src = false
+
+# 跳过目标 Registry 的 TLS 证书校验（仍使用 HTTPS）
+skip_tls_verify_dest = false
+
+# 失败时的最大尝试次数（包含首次执行），0 也会尝试一次
+retries = 3
+
+# 重试间隔
+retry_delay = "5s"
+
+# 同步超时时间，0 表示不超时
+timeout = "10m"
+"#
 }
 
 #[cfg(test)]
@@ -204,7 +241,10 @@ mod tests {
             ..Default::default()
         };
         base.merge(&override_cfg);
-        assert_eq!(base.source_registry, Some("override.example.com".to_string()));
+        assert_eq!(
+            base.source_registry,
+            Some("override.example.com".to_string())
+        );
         assert_eq!(base.retries, Some(5));
     }
 
@@ -231,8 +271,8 @@ mod tests {
         assert_eq!(images[1].image, "redis:7");
     }
 
-    #[test]
-    fn test_load_many_merges_configs() {
+    #[tokio::test]
+    async fn test_load_many_merges_configs() {
         let base = write_temp_config(
             r#"
 source_registry = "hubproxy.example.com"
@@ -256,58 +296,30 @@ source_registry = "mirror-a.example.com"
             base.path().to_string_lossy().to_string(),
             images.path().to_string_lossy().to_string(),
         ])
+        .await
         .unwrap();
 
-        assert_eq!(merged.source_registry, Some("hubproxy.example.com".to_string()));
-        assert_eq!(merged.target_registry, Some("registry.example.com:5000".to_string()));
+        assert_eq!(
+            merged.source_registry,
+            Some("hubproxy.example.com".to_string())
+        );
+        assert_eq!(
+            merged.target_registry,
+            Some("registry.example.com:5000".to_string())
+        );
         assert_eq!(merged.continue_on_error, Some(true));
         let imgs = merged.images.unwrap();
         assert_eq!(imgs.len(), 2);
         assert_eq!(imgs[1].image, "redis:7");
-        assert_eq!(imgs[1].source_registry, Some("mirror-a.example.com".to_string()));
+        assert_eq!(
+            imgs[1].source_registry,
+            Some("mirror-a.example.com".to_string())
+        );
     }
 
-    #[test]
-    fn test_load_many_empty_paths_errors() {
-        let result = ConfigFile::load_many(&[]);
+    #[tokio::test]
+    async fn test_load_many_empty_paths_errors() {
+        let result = ConfigFile::load_many(&[]).await;
         assert!(result.is_err());
     }
-}
-
-/// Generate a default config file template.
-pub fn default_template() -> &'static str {
-    r#"# bamboo 配置文件模板
-# 用法: bamboo sync --config ./bamboo.toml nginx:1.25
-# 优先级: 命令行参数 > 环境变量 > 本配置文件 > 默认值
-
-# 源 Registry 地址（例如 HubProxy 镜像代理）
-source_registry = "hubproxy.example.com"
-
-# 目标 Registry 地址（你的私有 Docker Distribution）
-target_registry = "registry.example.com:5000"
-
-# 源 Registry 认证，格式 user:pass
-# source_creds = "user:pass"
-
-# 目标 Registry 认证，格式 user:pass
-# creds = "user:pass"
-
-# Docker 认证文件路径（同时用于源和目标 Registry）
-authfile = "~/.docker/config.json"
-
-# 跳过源 Registry 的 TLS 验证
-insecure_src = false
-
-# 跳过目标 Registry 的 TLS 验证
-insecure_dest = false
-
-# 失败时的重试次数
-retries = 3
-
-# 重试间隔
-retry_delay = "5s"
-
-# 同步超时时间，0 表示不超时
-timeout = "10m"
-"#
 }

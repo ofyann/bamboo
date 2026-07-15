@@ -1,49 +1,30 @@
-mod cli;
-mod config;
-mod error;
-mod image;
-mod auth;
-mod registry;
-mod sync;
-mod sync_all;
-mod logging;
-mod init;
-
+use bamboo::cli::{Cli, Commands};
 use clap::Parser;
-use cli::{Cli, Commands};
 
 #[tokio::main]
 async fn main() {
-    config::preload_from_args();
     let cli = Cli::parse();
+
     let result = match cli.command {
         Commands::Sync(args) => {
-            let level = if args.quiet {
-                logging::LogLevel::Warn
-            } else if args.verbose {
-                logging::LogLevel::Debug
-            } else {
-                logging::LogLevel::Info
-            };
-            logging::set_level(level);
-            sync::run(args).await
+            bamboo::logging::init_from_flags(args.quiet, args.verbose);
+            match bamboo::config_resolver::resolve_sync(&args).await {
+                Ok(spec) => bamboo::sync::run(spec).await,
+                Err(e) => Err(e),
+            }
         }
         Commands::SyncAll(args) => {
-            let level = if args.quiet {
-                logging::LogLevel::Warn
-            } else if args.verbose {
-                logging::LogLevel::Debug
-            } else {
-                logging::LogLevel::Info
-            };
-            logging::set_level(level);
-            sync_all::run(args).await
+            bamboo::logging::init_from_flags(args.quiet, args.verbose);
+            match bamboo::config_resolver::resolve_sync_all(&args).await {
+                Ok((specs, options)) => bamboo::sync_all::run(specs, options).await,
+                Err(e) => Err(e),
+            }
         }
-        Commands::Init(args) => init::run(args),
+        Commands::Init(args) => bamboo::init::run(args),
     };
 
     if let Err(e) = result {
-        logging::error(&e.to_string());
+        bamboo::logging::error(&e.to_string());
         std::process::exit(1);
     }
 }

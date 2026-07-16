@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-16
+
 ### Fixed
 
 - `bamboo sync-all` now correctly inherits `insecure_src` / `insecure_dest` from the global config or CLI args when a per-image entry does not override them.

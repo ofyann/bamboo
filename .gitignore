@@ -23,3 +23,7 @@
 CONTEXT.md
 docs/
 .superpowers/
+
+# User-specific sync configs (contain real registry addresses)
+base.toml
+images.toml

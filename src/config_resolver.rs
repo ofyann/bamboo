@@ -180,6 +180,9 @@ pub async fn resolve_sync_all(args: &SyncAllArgs) -> Result<(Vec<SyncSpec>, Batc
             .unwrap_or_else(|| parse_duration(defaults::TIMEOUT).unwrap()),
     };
 
+    let global_insecure_src = args.insecure_src.or(cfg.insecure_src).unwrap_or(false);
+    let global_insecure_dest = args.insecure_dest.or(cfg.insecure_dest).unwrap_or(false);
+
     let global_skip_tls_verify_src = args
         .skip_tls_verify_src
         .or(cfg.skip_tls_verify_src)
@@ -201,6 +204,8 @@ pub async fn resolve_sync_all(args: &SyncAllArgs) -> Result<(Vec<SyncSpec>, Batc
                 &global_source_auth,
                 &global_target_auth,
                 &policy,
+                global_insecure_src,
+                global_insecure_dest,
                 global_skip_tls_verify_src,
                 global_skip_tls_verify_dest,
                 args.dry_run,
@@ -228,6 +233,8 @@ async fn resolve_sync_all_entry(
     global_source_auth: &Option<crate::auth::Auth>,
     global_target_auth: &Option<crate::auth::Auth>,
     global_policy: &SyncPolicy,
+    global_insecure_src: bool,
+    global_insecure_dest: bool,
     global_skip_tls_verify_src: bool,
     global_skip_tls_verify_dest: bool,
     dry_run: bool,
@@ -253,8 +260,8 @@ async fn resolve_sync_all_entry(
         global_target_auth.clone()
     };
 
-    let insecure_src = entry.insecure_src.unwrap_or(false);
-    let insecure_dest = entry.insecure_dest.unwrap_or(false);
+    let insecure_src = entry.insecure_src.unwrap_or(global_insecure_src);
+    let insecure_dest = entry.insecure_dest.unwrap_or(global_insecure_dest);
     let skip_tls_verify_src = entry
         .skip_tls_verify_src
         .unwrap_or(global_skip_tls_verify_src);
@@ -448,6 +455,35 @@ source_registry = "per-image-source.example.com"
         assert_eq!(specs[0].source.registry, "global-source.example.com");
         assert_eq!(specs[1].source.registry, "per-image-source.example.com");
         assert_eq!(options.jobs, defaults::JOBS);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_sync_all_inherits_global_insecure() {
+        let cfg = write_config(
+            r#"
+source_registry = "global-source.example.com"
+target_registry = "global-target.example.com:5000"
+insecure_dest = true
+skip_tls_verify_src = true
+
+[[images]]
+image = "nginx:1.25"
+
+[[images]]
+image = "redis:7"
+insecure_dest = false
+"#,
+        );
+        let args = sync_all_args(vec![cfg.path().to_string_lossy().to_string()]);
+        let (specs, _options) = resolve_sync_all(&args).await.unwrap();
+
+        assert_eq!(specs.len(), 2);
+        // 第一个镜像继承全局 insecure_dest = true
+        assert!(specs[0].target.insecure);
+        assert!(specs[0].source.skip_tls_verify);
+        // 第二个镜像被显式覆盖为 false
+        assert!(!specs[1].target.insecure);
+        assert!(specs[1].source.skip_tls_verify);
     }
 
     #[tokio::test]

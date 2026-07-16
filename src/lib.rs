@@ -7,8 +7,11 @@ pub mod error;
 pub mod image;
 pub mod init;
 pub mod logging;
+pub mod progress;
 pub mod registry;
 pub mod sync;
 pub mod sync_all;
 pub mod sync_engine;
 pub mod sync_spec;
+
+pub use progress::{BlobContext, Direction, NoopProgressSink, ProgressSink, TerminalProgressSink};

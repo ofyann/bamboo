@@ -1,4 +1,5 @@
 use crate::auth::Auth;
+use crate::progress::{BlobContext, Direction, ProgressSink};
 use crate::registry::{Manifest, Registry, RegistryError, RepositoryRef};
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -87,14 +88,29 @@ impl Registry for InMemoryRegistry {
         &self,
         _repo: &RepositoryRef,
         digest: &str,
+        total: Option<u64>,
         _auth: &Option<Auth>,
+        sink: &dyn ProgressSink,
     ) -> Result<Vec<u8>, RegistryError> {
-        self.blobs
+        let ctx = BlobContext {
+            digest: digest.to_string(),
+            size: total,
+        };
+        sink.on_start(&ctx, Direction::Pull);
+
+        let data = self
+            .blobs
             .lock()
             .unwrap()
             .get(digest)
             .cloned()
-            .ok_or_else(|| RegistryError::PullBlob(format!("blob {digest} 不存在")))
+            .ok_or_else(|| RegistryError::PullBlob(format!("blob {digest} 不存在")))?;
+
+        if let Some(size) = total {
+            sink.on_progress(&ctx, Direction::Pull, size);
+        }
+        sink.on_complete(&ctx, Direction::Pull, data.len() as u64);
+        Ok(data)
     }
 
     async fn push_blob(
@@ -103,8 +119,15 @@ impl Registry for InMemoryRegistry {
         digest: &str,
         data: Vec<u8>,
         _auth: &Option<Auth>,
+        sink: &dyn ProgressSink,
     ) -> Result<(), RegistryError> {
+        let ctx = BlobContext {
+            digest: digest.to_string(),
+            size: Some(data.len() as u64),
+        };
+        sink.on_start(&ctx, Direction::Push);
         self.blobs.lock().unwrap().insert(digest.to_string(), data);
+        sink.on_complete(&ctx, Direction::Push, ctx.size.unwrap_or(0));
         Ok(())
     }
 

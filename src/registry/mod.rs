@@ -1,4 +1,5 @@
 use crate::auth::Auth;
+use crate::progress::{NoopProgressSink, ProgressSink};
 use std::fmt;
 use thiserror::Error;
 
@@ -140,7 +141,9 @@ pub trait Registry: Send + Sync {
         &self,
         repo: &RepositoryRef,
         digest: &str,
+        total: Option<u64>,
         auth: &Option<Auth>,
+        sink: &dyn ProgressSink,
     ) -> Result<Vec<u8>, RegistryError>;
 
     /// 推送 blob 原始字节。
@@ -150,13 +153,25 @@ pub trait Registry: Send + Sync {
         digest: &str,
         data: Vec<u8>,
         auth: &Option<Auth>,
+        sink: &dyn ProgressSink,
     ) -> Result<(), RegistryError>;
 
     /// 检查 blob 是否已存在。
+    ///
+    /// 默认实现会尝试拉取 blob；具体实现可以提供更高效的检查方式。
     async fn blob_exists(
         &self,
         repo: &RepositoryRef,
         digest: &str,
         auth: &Option<Auth>,
-    ) -> Result<bool, RegistryError>;
+    ) -> Result<bool, RegistryError> {
+        match self
+            .pull_blob(repo, digest, None, auth, &NoopProgressSink)
+            .await
+        {
+            Ok(_) => Ok(true),
+            Err(RegistryError::PullBlob(_)) => Ok(false),
+            Err(e) => Err(e),
+        }
+    }
 }

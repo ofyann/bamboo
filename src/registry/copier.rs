@@ -1,4 +1,5 @@
 use crate::auth::Auth;
+use crate::progress::{BlobContext, ProgressSink};
 use crate::registry::{Manifest, Registry, RegistryError, RepositoryRef};
 use oci_distribution::manifest::{OciImageIndex, OciImageManifest, OciManifest};
 use tracing::Instrument;
@@ -11,6 +12,7 @@ pub struct ManifestCopier<'a> {
     target: &'a dyn Registry,
     source_auth: &'a Option<Auth>,
     target_auth: &'a Option<Auth>,
+    progress: &'a dyn ProgressSink,
 }
 
 impl<'a> ManifestCopier<'a> {
@@ -19,12 +21,14 @@ impl<'a> ManifestCopier<'a> {
         target: &'a dyn Registry,
         source_auth: &'a Option<Auth>,
         target_auth: &'a Option<Auth>,
+        progress: &'a dyn ProgressSink,
     ) -> Self {
         Self {
             source,
             target,
             source_auth,
             target_auth,
+            progress,
         }
     }
 
@@ -74,12 +78,22 @@ impl<'a> ManifestCopier<'a> {
         let manifest: OciImageManifest = serde_json::from_slice(manifest_body)
             .map_err(|e| RegistryError::ParseManifest(e.to_string()))?;
 
-        self.copy_blob(source_ref, target_ref, &manifest.config.digest)
-            .await?;
+        self.copy_blob(
+            source_ref,
+            target_ref,
+            &manifest.config.digest,
+            Some(manifest.config.size.max(0) as u64),
+        )
+        .await?;
 
         for layer in &manifest.layers {
-            self.copy_blob(source_ref, target_ref, &layer.digest)
-                .await?;
+            self.copy_blob(
+                source_ref,
+                target_ref,
+                &layer.digest,
+                Some(layer.size.max(0) as u64),
+            )
+            .await?;
         }
 
         let media_type = manifest
@@ -103,19 +117,31 @@ impl<'a> ManifestCopier<'a> {
         source_ref: &RepositoryRef,
         target_ref: &RepositoryRef,
         digest: &str,
+        size: Option<u64>,
     ) -> Result<(), RegistryError> {
-        tracing::info!("拉取 blob {} ...", digest);
+        let ctx = BlobContext {
+            digest: digest.to_string(),
+            size,
+        };
+
+        tracing::debug!("拉取 blob {} ...", digest);
         let data = self
             .source
-            .pull_blob(source_ref, digest, self.source_auth)
+            .pull_blob(
+                source_ref,
+                digest,
+                ctx.size,
+                self.source_auth,
+                self.progress,
+            )
             .await?;
-        tracing::info!("拉取 blob {} 完成", digest);
+        tracing::debug!("拉取 blob {} 完成", digest);
 
-        tracing::info!("推送 blob {} ({} bytes)...", digest, data.len());
+        tracing::debug!("推送 blob {} ({} bytes)...", digest, data.len());
         self.target
-            .push_blob(target_ref, digest, data, self.target_auth)
+            .push_blob(target_ref, digest, data, self.target_auth, self.progress)
             .await?;
-        tracing::info!("推送 blob {} 完成", digest);
+        tracing::debug!("推送 blob {} 完成", digest);
 
         Ok(())
     }
@@ -131,8 +157,16 @@ impl<'a> ManifestCopier<'a> {
 
             let child_source_ref =
                 RepositoryRef::with_digest(&source_ref.registry, &source_ref.repository, digest);
-            let child_target_ref =
-                RepositoryRef::with_digest(&target_ref.registry, &target_ref.repository, digest);
+
+            // 绕过 oci-distribution 0.11 的 bug：当目标 Registry 推送 manifest 后不返回
+            // Location header 时，push_manifest_raw 对 digest reference 会 panic。
+            // 使用一个临时 tag 推送子 manifest，manifest 实际仍按 digest 存储，index 也仍按 digest 引用它。
+            let child_target_tag = format!("_bamboo_child_{}", digest.replace(':', "_"));
+            let child_target_ref = RepositoryRef::with_tag(
+                &target_ref.registry,
+                &target_ref.repository,
+                &child_target_tag,
+            );
 
             let manifest = self
                 .source
@@ -145,6 +179,7 @@ impl<'a> ManifestCopier<'a> {
                 .as_ref()
                 .map(|p| format!("{}/{}", p.os, p.architecture))
                 .unwrap_or_else(|| "unknown".to_string());
+            self.progress.set_platform(Some(platform.clone()));
             let span =
                 tracing::info_span!("child_manifest", platform = %platform, digest = %digest);
             self.copy_single_manifest(&child_source_ref, &child_target_ref, &manifest.bytes)
@@ -159,6 +194,7 @@ impl<'a> ManifestCopier<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::progress::NoopProgressSink;
     use crate::registry::InMemoryRegistry;
     use std::collections::HashMap;
 
@@ -235,7 +271,8 @@ mod tests {
             source.add_blob(d, b.clone());
         }
 
-        let copier = ManifestCopier::new(&source, &target, &None, &None);
+        let progress = NoopProgressSink;
+        let copier = ManifestCopier::new(&source, &target, &None, &None, &progress);
         copier.copy(&source_ref, &target_ref).await.unwrap();
 
         let dest_digest = target.digest(&target_ref, &None).await.unwrap();

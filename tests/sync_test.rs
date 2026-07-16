@@ -1,5 +1,6 @@
 mod common;
 
+use bamboo::progress::NoopProgressSink;
 use bamboo::registry::{ManifestCopier, OciRegistry, Registry, RepositoryRef};
 use common::mock_registry::MockRegistry;
 use std::collections::HashMap;
@@ -161,7 +162,8 @@ async fn test_copy_single_arch_image() {
     assert!(src_digest.is_some());
     assert!(target.digest(&target_ref, &None).await.unwrap().is_none());
 
-    let copier = ManifestCopier::new(&source, &target, &None, &None);
+    let progress = NoopProgressSink;
+    let copier = ManifestCopier::new(&source, &target, &None, &None, &progress);
     copier.copy(&source_ref, &target_ref).await.unwrap();
 
     let dest_digest = target.digest(&target_ref, &None).await.unwrap();
@@ -246,7 +248,8 @@ async fn test_copy_multi_arch_image_index() {
     let src_digest = source.digest(&source_ref, &None).await.unwrap();
     assert!(target.digest(&target_ref, &None).await.unwrap().is_none());
 
-    let copier = ManifestCopier::new(&source, &target, &None, &None);
+    let progress = NoopProgressSink;
+    let copier = ManifestCopier::new(&source, &target, &None, &None, &progress);
     copier.copy(&source_ref, &target_ref).await.unwrap();
 
     let dest_digest = target.digest(&target_ref, &None).await.unwrap();

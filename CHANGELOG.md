@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-07-16
+
+### Added
+
+- 实时 blob 同步进度输出：`bamboo sync` / `bamboo sync-all` 现在会在终端显示每个镜像的 blob 拉取/推送进度（按 ~10% 里程碑），多架构镜像会标注平台信息。
+
+### Fixed
+
+- 绕过 `oci-distribution` 0.11 的 panic：向不返回 `Location` header 的 Registry 推送多架构子 manifest 时，改用临时 `_bamboo_child_<digest>` tag 推送，index 仍按 digest 引用。
+
 ## [0.3.1] - 2026-07-16
 
 ### Fixed

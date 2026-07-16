@@ -1,4 +1,5 @@
 use crate::error::{BambooError, Result};
+use crate::progress::TerminalProgressSink;
 use crate::registry::{ManifestCopier, OciRegistry, Registry, RepositoryRef};
 use crate::sync_spec::SyncSpec;
 use std::sync::Arc;
@@ -122,11 +123,13 @@ impl SyncEngine {
 
             tracing::info!("开始网络流式同步...");
 
+            let progress = TerminalProgressSink::new(&image);
             let copier = ManifestCopier::new(
                 &source_registry,
                 &target_registry,
                 &spec.auth.source,
                 &spec.auth.target,
+                &progress,
             );
             let copy_fut = try_with_retry(
                 || copier.copy(&source_ref, &target_ref),

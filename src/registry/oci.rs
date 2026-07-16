@@ -1,4 +1,5 @@
 use crate::auth::Auth;
+use crate::progress::{BlobContext, Direction, NoopProgressSink, ProgressSink};
 use crate::registry::{Manifest, Reference, Registry, RegistryError, RepositoryRef};
 use http::header::HeaderValue;
 use oci_distribution::client::{Client, ClientConfig, ClientProtocol};
@@ -130,15 +131,25 @@ impl Registry for OciRegistry {
         &self,
         repo: &RepositoryRef,
         digest: &str,
+        total: Option<u64>,
         _auth: &Option<Auth>,
+        sink: &dyn ProgressSink,
     ) -> Result<Vec<u8>, RegistryError> {
         let reference = to_oci_reference(repo)?;
-        let mut data = Vec::new();
-        let descriptor = descriptor_from_digest(digest);
+        let descriptor = descriptor_from_digest(digest, total.unwrap_or(0));
+        let ctx = BlobContext {
+            digest: digest.to_string(),
+            size: total,
+        };
+
+        sink.on_start(&ctx, Direction::Pull);
+        let mut writer = CountingWriter::new(sink, ctx.clone());
         self.client
-            .pull_blob(&reference, &descriptor, &mut data)
+            .pull_blob(&reference, &descriptor, &mut writer)
             .await
             .map_err(|e| RegistryError::PullBlob(e.to_string()))?;
+        let data = writer.into_inner();
+        sink.on_complete(&ctx, Direction::Pull, data.len() as u64);
         Ok(data)
     }
 
@@ -148,12 +159,20 @@ impl Registry for OciRegistry {
         digest: &str,
         data: Vec<u8>,
         _auth: &Option<Auth>,
+        sink: &dyn ProgressSink,
     ) -> Result<(), RegistryError> {
         let reference = to_oci_reference(repo)?;
+        let ctx = BlobContext {
+            digest: digest.to_string(),
+            size: Some(data.len() as u64),
+        };
+
+        sink.on_start(&ctx, Direction::Push);
         self.client
             .push_blob(&reference, &data, digest)
             .await
             .map_err(|e| RegistryError::PushBlob(e.to_string()))?;
+        sink.on_complete(&ctx, Direction::Push, data.len() as u64);
         Ok(())
     }
 
@@ -164,7 +183,10 @@ impl Registry for OciRegistry {
         auth: &Option<Auth>,
     ) -> Result<bool, RegistryError> {
         // oci-distribution 没有直接的 blob_exists；先尝试 pull，成功则存在。
-        match self.pull_blob(repo, digest, auth).await {
+        match self
+            .pull_blob(repo, digest, None, auth, &NoopProgressSink)
+            .await
+        {
             Ok(_) => Ok(true),
             Err(RegistryError::PullBlob(_)) => Ok(false),
             Err(e) => Err(e),
@@ -172,13 +194,65 @@ impl Registry for OciRegistry {
     }
 }
 
-fn descriptor_from_digest(digest: &str) -> OciDescriptor {
+fn descriptor_from_digest(digest: &str, size: u64) -> OciDescriptor {
     OciDescriptor {
         digest: digest.to_string(),
         media_type: "application/octet-stream".to_string(),
-        size: 0,
+        size: size as i64,
         urls: None,
         annotations: None,
+    }
+}
+
+/// 一个写入 Vec<u8> 并同时报告进度的 `tokio::io::AsyncWrite` 包装器。
+struct CountingWriter<'a> {
+    sink: &'a dyn ProgressSink,
+    ctx: BlobContext,
+    buffer: Vec<u8>,
+    current: u64,
+}
+
+impl<'a> CountingWriter<'a> {
+    fn new(sink: &'a dyn ProgressSink, ctx: BlobContext) -> Self {
+        Self {
+            sink,
+            ctx,
+            buffer: Vec::new(),
+            current: 0,
+        }
+    }
+
+    fn into_inner(self) -> Vec<u8> {
+        self.buffer
+    }
+}
+
+impl tokio::io::AsyncWrite for CountingWriter<'_> {
+    fn poll_write(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        let this = self.get_mut();
+        this.buffer.extend_from_slice(buf);
+        this.current += buf.len() as u64;
+        this.sink
+            .on_progress(&this.ctx, Direction::Pull, this.current);
+        std::task::Poll::Ready(Ok(buf.len()))
+    }
+
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::task::Poll::Ready(Ok(()))
     }
 }
 

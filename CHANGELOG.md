@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-07-17
+
+### Fixed
+
+- 修复同步多 tag/多架构镜像时目标 Registry 报 `BLOB_UNKNOWN` 的问题：关闭 `OciRegistry::blob_exists` 中基于 `pull_blob_stream` 的存在性探测（部分 Registry 会返回假阳性），改为始终让 `push_blob` 自行用标准 `HEAD /v2/{repo}/blobs/{digest}` 流程处理去重。
+
 ## [0.3.4] - 2026-07-17
 
 ### Changed

@@ -178,40 +178,14 @@ impl Registry for OciRegistry {
 
     async fn blob_exists(
         &self,
-        repo: &RepositoryRef,
-        digest: &str,
+        _repo: &RepositoryRef,
+        _digest: &str,
         _auth: &Option<Auth>,
     ) -> Result<bool, RegistryError> {
-        // 用 pull_blob_stream 做轻量级存在性探测：只发起请求、拿到响应状态就丢弃流，
-        // 避免下载整个 blob。
-        let reference = to_oci_reference(repo)?;
-        let descriptor = descriptor_from_digest(digest, 0);
-
-        match self.client.pull_blob_stream(&reference, &descriptor).await {
-            Ok(_) => Ok(true),
-            Err(oci_distribution::errors::OciDistributionError::RegistryError {
-                envelope, ..
-            }) if envelope
-                .errors
-                .iter()
-                .any(|e| e.code == oci_distribution::errors::OciErrorCode::ManifestUnknown) =>
-            {
-                Ok(false)
-            }
-            Err(oci_distribution::errors::OciDistributionError::ServerError {
-                code: 404, ..
-            }) => Ok(false),
-            Err(oci_distribution::errors::OciDistributionError::RequestError(e))
-                if e.status().map(|s| s.as_u16()) == Some(404) =>
-            {
-                Ok(false)
-            }
-            Err(e) => {
-                // 探测失败时不中断同步，回退到“假设不存在”，由后续 pull/push 决定成败。
-                tracing::debug!("探测 blob {} 存在性失败，按不存在处理: {}", digest, e);
-                Ok(false)
-            }
-        }
+        // 暂时禁用基于 pull_blob_stream 的本地存在性探测：
+        // 部分 Registry 对该探测返回假阳性，导致 manifest 推送时报 BLOB_UNKNOWN。
+        // 直接返回 false，让 push_blob 自行处理去重（oci-distribution 内部会先 HEAD 检查）。
+        Ok(false)
     }
 }
 

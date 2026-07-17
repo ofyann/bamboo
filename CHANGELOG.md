@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-07-17
+
+### Changed
+
+- 精简同步进度日志：移除每个 blob 的“开始/完成/进度”明细行，只保留每个镜像/平台的汇总进度里程碑（每 10%）和已存在 blob 跳过提示，日志更清爽且并发时更易读。
+
 ## [0.3.6] - 2026-07-17
 
 ### Fixed

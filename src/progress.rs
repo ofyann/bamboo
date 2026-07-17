@@ -70,7 +70,6 @@ impl ProgressSink for NoopProgressSink {
 static PROGRESS_LOCK: Mutex<()> = Mutex::new(());
 
 const THROTTLE_PERCENT_STEP: u64 = 10;
-const THROTTLE_BYTES_UNKNOWN_SIZE: u64 = 1024 * 1024;
 
 /// 单个 manifest（单架构镜像或某个平台）的聚合进度。
 #[derive(Debug, Default)]
@@ -88,7 +87,6 @@ pub struct TerminalProgressSink {
     label: String,
     platform: Mutex<Option<String>>,
     manifests: Mutex<HashMap<Option<String>, ManifestProgress>>,
-    last_printed: Mutex<HashMap<(Direction, String), u64>>,
     lock: &'static Mutex<()>,
 }
 
@@ -98,7 +96,6 @@ impl TerminalProgressSink {
             label: label.into(),
             platform: Mutex::new(None),
             manifests: Mutex::new(HashMap::new()),
-            last_printed: Mutex::new(HashMap::new()),
             lock: &PROGRESS_LOCK,
         }
     }
@@ -181,30 +178,6 @@ impl TerminalProgressSink {
             progress.last_reported_pct = pct;
         }
     }
-
-    fn should_print(&self, ctx: &BlobContext, direction: Direction, current: u64) -> bool {
-        let mut last = self.last_printed.lock().unwrap();
-        let key = (direction, ctx.digest.clone());
-        let last_value = last.get(&key).copied().unwrap_or(0);
-
-        let should = match ctx.size {
-            Some(total) if total > 0 => {
-                let last_pct = last_value * 100 / total;
-                let current_pct = current * 100 / total;
-                current_pct >= last_pct + THROTTLE_PERCENT_STEP
-            }
-            _ => {
-                // 大小未知时，每 1 MiB 打印一次。
-                current >= last_value + THROTTLE_BYTES_UNKNOWN_SIZE
-            }
-        };
-
-        if should {
-            last.insert(key, current);
-        }
-
-        should
-    }
 }
 
 impl ProgressSink for TerminalProgressSink {
@@ -224,72 +197,26 @@ impl ProgressSink for TerminalProgressSink {
         manifests.insert(key, progress);
     }
 
-    fn on_start(&self, ctx: &BlobContext, direction: Direction) {
+    fn on_start(&self, ctx: &BlobContext, _direction: Direction) {
         self.with_manifest_progress(|p| {
             p.in_flight.insert(ctx.digest.clone(), 0);
         });
-
-        self.print(format!(
-            "{} {} blob {} ({})",
-            self.prefix(self.current_platform().as_ref()),
-            direction.as_str(),
-            short_digest(&ctx.digest),
-            match ctx.size {
-                Some(size) => format!("大小 {}", human_bytes(size)),
-                None => "大小未知".to_string(),
-            }
-        ));
     }
 
-    fn on_progress(&self, ctx: &BlobContext, direction: Direction, current: u64) {
-        if !self.should_print(ctx, direction, current) {
-            return;
-        }
-
+    fn on_progress(&self, ctx: &BlobContext, _direction: Direction, current: u64) {
         self.with_manifest_progress(|p| {
             p.in_flight.insert(ctx.digest.clone(), current);
         });
 
-        match ctx.size {
-            Some(total) => {
-                self.print(format!(
-                    "{} {} blob {} {} / {} ({})",
-                    self.prefix(self.current_platform().as_ref()),
-                    direction.as_str(),
-                    short_digest(&ctx.digest),
-                    human_bytes(current),
-                    human_bytes(total),
-                    percent(current, total)
-                ));
-            }
-            None => {
-                self.print(format!(
-                    "{} {} blob {} {} / ?",
-                    self.prefix(self.current_platform().as_ref()),
-                    direction.as_str(),
-                    short_digest(&ctx.digest),
-                    human_bytes(current)
-                ));
-            }
-        }
-
         self.report_aggregate_if_needed(self.current_platform());
     }
 
-    fn on_complete(&self, ctx: &BlobContext, direction: Direction, total: u64) {
+    fn on_complete(&self, ctx: &BlobContext, _direction: Direction, total: u64) {
         self.with_manifest_progress(|p| {
             p.in_flight.remove(&ctx.digest);
             p.done_blobs += 1;
             p.done_bytes += total;
         });
-
-        self.print(format!(
-            "{} {} blob {} 完成 ({})",
-            self.prefix(self.current_platform().as_ref()),
-            direction.as_str(),
-            short_digest(&ctx.digest),
-            human_bytes(total)
-        ));
 
         self.report_aggregate_if_needed(self.current_platform());
     }
@@ -350,13 +277,6 @@ fn human_bytes(bytes: u64) -> String {
     format!("{:.1} {}", value, UNITS[unit_index])
 }
 
-fn percent(current: u64, total: u64) -> String {
-    if total == 0 {
-        return "0%".to_string();
-    }
-    format!("{}%", current * 100 / total)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -378,14 +298,6 @@ mod tests {
             "sha256:5d2c68e0b3e2f9b3"
         );
         assert_eq!(short_digest("sha256:abcd"), "sha256:abcd");
-    }
-
-    #[test]
-    fn percent_calculates_correctly() {
-        assert_eq!(percent(0, 100), "0%");
-        assert_eq!(percent(34, 100), "34%");
-        assert_eq!(percent(100, 100), "100%");
-        assert_eq!(percent(0, 0), "0%");
     }
 
     #[test]

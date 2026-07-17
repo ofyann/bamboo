@@ -59,11 +59,14 @@ impl<'a> ManifestCopier<'a> {
                     "同步多架构镜像 index，包含 {} 个子 manifest",
                     index.manifests.len()
                 );
-                self.copy_image_index(source_ref, dest_ref, &index).await?;
-
-                self.dest
-                    .push_manifest(dest_ref, &manifest, self.dest_auth)
+                let filtered = self
+                    .copy_image_index(source_ref, dest_ref, &index, &manifest.media_type)
                     .await?;
+                if !filtered {
+                    self.dest
+                        .push_manifest(dest_ref, &manifest, self.dest_auth)
+                        .await?;
+                }
             }
         }
 
@@ -217,18 +220,22 @@ impl<'a> ManifestCopier<'a> {
         Ok(matched)
     }
 
+    /// 拷贝多架构 index。
+    ///
+    /// 返回值：如果内部已经推送了（过滤后重写）index 则返回 `true`，否则调用方需要自行推送原 index。
     async fn copy_image_index(
         &self,
         source_ref: &RepositoryRef,
         dest_ref: &RepositoryRef,
         index: &OciImageIndex,
-    ) -> Result<(), RegistryError> {
+        index_media_type: &str,
+    ) -> Result<bool, RegistryError> {
         let manifests = self.filter_platforms(&index.manifests)?;
         if manifests.is_empty() {
             return Err(RegistryError::ManifestUnknown);
         }
 
-        for entry in manifests {
+        for entry in &manifests {
             let digest = &entry.digest;
 
             let child_source_ref =
@@ -262,7 +269,28 @@ impl<'a> ManifestCopier<'a> {
                 .await?;
         }
 
-        Ok(())
+        // 如果指定了平台过滤，必须重写 index，只保留已同步的子 manifest；
+        // 否则目标 Registry 会在推送原 index 时因找不到未同步平台的子 manifest 而报 BLOB_UNKNOWN。
+        if self.platform.is_some() {
+            let filtered = OciImageIndex {
+                schema_version: index.schema_version,
+                media_type: index.media_type.clone(),
+                manifests: manifests.iter().map(|e| (*e).clone()).collect(),
+                annotations: index.annotations.clone(),
+            };
+            let bytes = serde_json::to_vec(&filtered)
+                .map_err(|e| RegistryError::ParseManifest(e.to_string()))?;
+            self.dest
+                .push_manifest(
+                    dest_ref,
+                    &Manifest::new(bytes, index_media_type),
+                    self.dest_auth,
+                )
+                .await?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 }
 

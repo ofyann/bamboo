@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-07-17
+
+### Fixed
+
+- 彻底修复多架构镜像在指定 `--platform` 时目标 Registry 报 `BLOB_UNKNOWN` 的问题：平台过滤后只同步选中的子 manifest，并重写 index 只保留已同步的平台条目，不再推送引用未同步子 manifest 的原 index。
+
 ## [0.3.5] - 2026-07-17
 
 ### Fixed

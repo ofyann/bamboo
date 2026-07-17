@@ -9,7 +9,7 @@ use std::time::Duration;
 pub struct SyncSpec {
     pub image: ImageRef,
     pub source: RegistryEndpoint,
-    pub target: RegistryEndpoint,
+    pub dest: RegistryEndpoint,
     pub auth: AuthPair,
     pub authfile: String,
     pub policy: SyncPolicy,
@@ -32,7 +32,7 @@ pub struct RegistryEndpoint {
 #[derive(Debug, Clone, Default)]
 pub struct AuthPair {
     pub source: Option<Auth>,
-    pub target: Option<Auth>,
+    pub dest: Option<Auth>,
 }
 
 /// 同步执行策略：重试、超时、强制覆盖等。

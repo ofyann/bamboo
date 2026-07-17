@@ -28,34 +28,27 @@ impl SyncEngine {
         let result: Result<()> = async {
             let normalized = spec.image.normalize();
             let source_path = normalized.hubproxy_path();
-            let target_path = normalized.target_path();
+            let dest_path = normalized.dest_path();
 
             let source_scheme = if spec.source.insecure {
                 "http"
             } else {
                 "https"
             };
-            let target_scheme = if spec.target.insecure {
-                "http"
-            } else {
-                "https"
-            };
+            let dest_scheme = if spec.dest.insecure { "http" } else { "https" };
 
             let source_uri = format!(
                 "{}://{}/{}",
                 source_scheme, spec.source.registry, source_path
             );
-            let target_uri = format!(
-                "{}://{}/{}",
-                target_scheme, spec.target.registry, target_path
-            );
+            let dest_uri = format!("{}://{}/{}", dest_scheme, spec.dest.registry, dest_path);
 
             tracing::info!(
                 "[{}] 处理镜像: {} -> 目标: {}/{}",
                 image,
                 spec.image.image_path_with_tag(),
-                spec.target.registry,
-                target_path
+                spec.dest.registry,
+                dest_path
             );
             tracing::debug!(
                 "解析结果: registry={}, namespace={}, name={}, tag={}",
@@ -64,26 +57,22 @@ impl SyncEngine {
                 normalized.name,
                 normalized.tag
             );
-            tracing::debug!(
-                "协议: source={}://, target={}://",
-                source_scheme,
-                target_scheme
-            );
+            tracing::debug!("协议: source={}://, dest={}://", source_scheme, dest_scheme);
 
             if spec.dry_run {
                 tracing::info!("[{}] [空跑模式] 源地址: {}", image, source_uri);
-                tracing::info!("[{}] [空跑模式] 目标地址: {}", image, target_uri);
+                tracing::info!("[{}] [空跑模式] 目标地址: {}", image, dest_uri);
                 return Ok(());
             }
 
             tracing::debug!(
-                "认证: source_auth={}, target_auth={}",
+                "认证: source_auth={}, dest_auth={}",
                 if spec.auth.source.is_some() {
                     "有"
                 } else {
                     "无"
                 },
-                if spec.auth.target.is_some() {
+                if spec.auth.dest.is_some() {
                     "有"
                 } else {
                     "无"
@@ -92,20 +81,19 @@ impl SyncEngine {
 
             let source_registry =
                 OciRegistry::new(spec.source.insecure, spec.source.skip_tls_verify);
-            let target_registry =
-                OciRegistry::new(spec.target.insecure, spec.target.skip_tls_verify);
+            let dest_registry = OciRegistry::new(spec.dest.insecure, spec.dest.skip_tls_verify);
 
             let source_ref =
                 RepositoryRef::with_tag(&spec.source.registry, &source_path, &normalized.tag);
-            let target_ref =
-                RepositoryRef::with_tag(&spec.target.registry, &target_path, &normalized.tag);
+            let dest_ref =
+                RepositoryRef::with_tag(&spec.dest.registry, &dest_path, &normalized.tag);
 
             let src_digest = source_registry
                 .digest(&source_ref, &spec.auth.source)
                 .await
                 .map_err(|e| BambooError::Registry(e.to_string()))?;
-            let dest_digest = target_registry
-                .digest(&target_ref, &spec.auth.target)
+            let dest_digest = dest_registry
+                .digest(&dest_ref, &spec.auth.dest)
                 .await
                 .map_err(|e| BambooError::Registry(e.to_string()))?;
 
@@ -119,21 +107,21 @@ impl SyncEngine {
                     return Ok(());
                 }
             }
-            tracing::debug!("digest: source={:?}, target={:?}", src_digest, dest_digest);
+            tracing::debug!("digest: source={:?}, dest={:?}", src_digest, dest_digest);
 
             tracing::info!("[{}] 开始网络流式同步...", image);
 
             let progress = TerminalProgressSink::new(&image);
             let copier = ManifestCopier::new(
                 &source_registry,
-                &target_registry,
+                &dest_registry,
                 &spec.auth.source,
-                &spec.auth.target,
+                &spec.auth.dest,
                 &progress,
                 spec.platform.clone(),
             );
             let copy_fut = try_with_retry(
-                || copier.copy(&source_ref, &target_ref),
+                || copier.copy(&source_ref, &dest_ref),
                 spec.policy.max_attempts,
                 spec.policy.retry_delay,
             );
@@ -244,7 +232,8 @@ where
                 last_err = Some(e);
                 if attempt < attempts {
                     tracing::warn!(
-                        "执行失败，等待 {:?} 秒后重试 ({}/{})...",
+                        "执行失败: {}，等待 {:?} 秒后重试 ({}/{})...",
+                        last_err.as_ref().unwrap(),
                         retry_delay,
                         attempt,
                         attempts
@@ -269,7 +258,7 @@ mod tests {
     use crate::sync_spec::{AuthPair, RegistryEndpoint, SyncPolicy};
     use std::str::FromStr;
 
-    fn spec_for(image: &str, source_registry: &str, target_registry: &str) -> SyncSpec {
+    fn spec_for(image: &str, source_registry: &str, dest_registry: &str) -> SyncSpec {
         SyncSpec {
             image: ImageRef::from_str(image).unwrap(),
             source: RegistryEndpoint {
@@ -277,8 +266,8 @@ mod tests {
                 insecure: true,
                 skip_tls_verify: false,
             },
-            target: RegistryEndpoint {
-                registry: target_registry.to_string(),
+            dest: RegistryEndpoint {
+                registry: dest_registry.to_string(),
                 insecure: true,
                 skip_tls_verify: false,
             },

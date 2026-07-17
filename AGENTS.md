@@ -27,7 +27,7 @@ cargo run -- sync --dry-run nginx:1.25
 
 # 真实同步（配置实际 Registry 地址）
 export BAMBOO_SOURCE_REGISTRY=你的源镜像代理地址
-export BAMBOO_TARGET_REGISTRY=你的目标私服地址
+export BAMBOO_DEST_REGISTRY=你的目标私服地址
 bamboo sync nginx:1.25
 
 # 源 Registry 也需要认证时

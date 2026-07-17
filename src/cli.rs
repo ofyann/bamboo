@@ -31,8 +31,8 @@ pub struct SyncArgs {
     pub source_registry: Option<String>,
 
     /// 目标 Registry 地址（你的私有 Docker Distribution），默认 registry.example.com:5000
-    #[arg(long, env = "BAMBOO_TARGET_REGISTRY")]
-    pub target_registry: Option<String>,
+    #[arg(long, env = "BAMBOO_DEST_REGISTRY")]
+    pub dest_registry: Option<String>,
 
     /// 空跑模式：仅打印解析后的源/目标地址，不执行同步
     #[arg(long, short, default_value_t = false)]
@@ -43,8 +43,8 @@ pub struct SyncArgs {
     pub source_creds: Option<String>,
 
     /// 目标 Registry 认证，格式 user:pass
-    #[arg(long = "target-creds", visible_alias = "creds", env = "BAMBOO_CREDS")]
-    pub creds: Option<String>,
+    #[arg(long = "dest-creds", env = "BAMBOO_DEST_CREDS")]
+    pub dest_creds: Option<String>,
 
     /// Docker 认证文件路径（同时用于源和目标 Registry），默认 ~/.docker/config.json
     #[arg(long, env = "BAMBOO_AUTHFILE")]

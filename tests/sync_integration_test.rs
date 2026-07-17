@@ -13,7 +13,7 @@ async fn test_sync_nginx_to_local_registry() {
             "run",
             "--",
             "sync",
-            "--target-registry",
+            "--dest-registry",
             "localhost:5000",
             "--insecure-dest",
             "nginx:1.25",

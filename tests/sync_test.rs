@@ -128,12 +128,12 @@ async fn test_digest_skip_when_manifests_match() {
     );
 
     let source = OciRegistry::new(true, false);
-    let target = OciRegistry::new(true, false);
+    let dest_registry = OciRegistry::new(true, false);
     let source_ref = repo_ref(&src.base_url(), "library/nginx", "1.25");
-    let target_ref = repo_ref(&dest.base_url(), "library/nginx", "1.25");
+    let dest_ref = repo_ref(&dest.base_url(), "library/nginx", "1.25");
 
     let src_digest = source.digest(&source_ref, &None).await.unwrap();
-    let dest_digest = target.digest(&target_ref, &None).await.unwrap();
+    let dest_digest = dest_registry.digest(&dest_ref, &None).await.unwrap();
 
     assert!(src_digest.is_some());
     assert_eq!(src_digest, dest_digest);
@@ -154,19 +154,23 @@ async fn test_copy_single_arch_image() {
     );
 
     let source = OciRegistry::new(true, false);
-    let target = OciRegistry::new(true, false);
+    let dest_registry = OciRegistry::new(true, false);
     let source_ref = repo_ref(&src.base_url(), "library/nginx", "1.25");
-    let target_ref = repo_ref(&dest.base_url(), "library/nginx", "1.25");
+    let dest_ref = repo_ref(&dest.base_url(), "library/nginx", "1.25");
 
     let src_digest = source.digest(&source_ref, &None).await.unwrap();
     assert!(src_digest.is_some());
-    assert!(target.digest(&target_ref, &None).await.unwrap().is_none());
+    assert!(dest_registry
+        .digest(&dest_ref, &None)
+        .await
+        .unwrap()
+        .is_none());
 
     let progress = NoopProgressSink;
-    let copier = ManifestCopier::new(&source, &target, &None, &None, &progress, None);
-    copier.copy(&source_ref, &target_ref).await.unwrap();
+    let copier = ManifestCopier::new(&source, &dest_registry, &None, &None, &progress, None);
+    copier.copy(&source_ref, &dest_ref).await.unwrap();
 
-    let dest_digest = target.digest(&target_ref, &None).await.unwrap();
+    let dest_digest = dest_registry.digest(&dest_ref, &None).await.unwrap();
     assert_eq!(src_digest, dest_digest);
 
     let (stored_digest, stored_manifest) = dest.manifest("library/nginx", "1.25").unwrap();
@@ -241,18 +245,22 @@ async fn test_copy_multi_arch_image_index() {
     );
 
     let source = OciRegistry::new(true, false);
-    let target = OciRegistry::new(true, false);
+    let dest_registry = OciRegistry::new(true, false);
     let source_ref = repo_ref(&src.base_url(), "library/nginx", "1.25");
-    let target_ref = repo_ref(&dest.base_url(), "library/nginx", "1.25");
+    let dest_ref = repo_ref(&dest.base_url(), "library/nginx", "1.25");
 
     let src_digest = source.digest(&source_ref, &None).await.unwrap();
-    assert!(target.digest(&target_ref, &None).await.unwrap().is_none());
+    assert!(dest_registry
+        .digest(&dest_ref, &None)
+        .await
+        .unwrap()
+        .is_none());
 
     let progress = NoopProgressSink;
-    let copier = ManifestCopier::new(&source, &target, &None, &None, &progress, None);
-    copier.copy(&source_ref, &target_ref).await.unwrap();
+    let copier = ManifestCopier::new(&source, &dest_registry, &None, &None, &progress, None);
+    copier.copy(&source_ref, &dest_ref).await.unwrap();
 
-    let dest_digest = target.digest(&target_ref, &None).await.unwrap();
+    let dest_digest = dest_registry.digest(&dest_ref, &None).await.unwrap();
     assert_eq!(src_digest, dest_digest);
 
     let (_, stored_index) = dest.manifest("library/nginx", "1.25").unwrap();
@@ -332,22 +340,22 @@ async fn test_copy_multi_arch_image_index_filters_platform() {
     );
 
     let source = OciRegistry::new(true, false);
-    let target = OciRegistry::new(true, false);
+    let dest_registry = OciRegistry::new(true, false);
     let source_ref = repo_ref(&src.base_url(), "library/nginx", "1.25");
-    let target_ref = repo_ref(&dest.base_url(), "library/nginx", "1.25");
+    let dest_ref = repo_ref(&dest.base_url(), "library/nginx", "1.25");
 
     let progress = NoopProgressSink;
     let copier = ManifestCopier::new(
         &source,
-        &target,
+        &dest_registry,
         &None,
         &None,
         &progress,
         Some("linux/arm64".to_string()),
     );
-    copier.copy(&source_ref, &target_ref).await.unwrap();
+    copier.copy(&source_ref, &dest_ref).await.unwrap();
 
-    let dest_digest = target.digest(&target_ref, &None).await.unwrap();
+    let dest_digest = dest_registry.digest(&dest_ref, &None).await.unwrap();
     assert!(dest_digest.is_some());
 
     // arm64 子 manifest 应该被拷贝

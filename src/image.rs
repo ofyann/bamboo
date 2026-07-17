@@ -36,7 +36,7 @@ impl ImageRef {
         }
     }
 
-    pub fn target_path(&self) -> String {
+    pub fn dest_path(&self) -> String {
         self.normalize().image_path()
     }
 
@@ -123,7 +123,7 @@ mod tests {
         assert_eq!(img.namespace, "a/b/c");
         assert_eq!(img.name, "image");
         assert_eq!(img.tag, "v1");
-        assert_eq!(img.normalize().target_path(), "a/b/c/image");
+        assert_eq!(img.normalize().dest_path(), "a/b/c/image");
     }
 
     #[test]
@@ -139,8 +139,8 @@ mod tests {
     }
 
     #[test]
-    fn test_target_path_always_uses_normalized() {
+    fn test_dest_path_always_uses_normalized() {
         let img = ImageRef::from_str("alpine").unwrap();
-        assert_eq!(img.target_path(), "library/alpine");
+        assert_eq!(img.dest_path(), "library/alpine");
     }
 }

@@ -8,9 +8,9 @@ use std::str::FromStr;
 #[serde(deny_unknown_fields)]
 pub struct ConfigFile {
     pub source_registry: Option<String>,
-    pub target_registry: Option<String>,
+    pub dest_registry: Option<String>,
     pub source_creds: Option<String>,
-    pub creds: Option<String>,
+    pub dest_creds: Option<String>,
     pub authfile: Option<String>,
     pub insecure_src: Option<bool>,
     pub insecure_dest: Option<bool>,
@@ -31,9 +31,9 @@ pub struct ConfigFile {
 pub struct ImageEntry {
     pub image: String,
     pub source_registry: Option<String>,
-    pub target_registry: Option<String>,
+    pub dest_registry: Option<String>,
     pub source_creds: Option<String>,
-    pub creds: Option<String>,
+    pub dest_creds: Option<String>,
     pub authfile: Option<String>,
     pub insecure_src: Option<bool>,
     pub insecure_dest: Option<bool>,
@@ -84,8 +84,8 @@ impl ConfigFile {
         if let Some(source_registry) = &self.source_registry {
             validate_non_empty(source_registry, "source_registry")?;
         }
-        if let Some(target_registry) = &self.target_registry {
-            validate_non_empty(target_registry, "target_registry")?;
+        if let Some(dest_registry) = &self.dest_registry {
+            validate_non_empty(dest_registry, "dest_registry")?;
         }
 
         if let Some(images) = &self.images {
@@ -115,9 +115,9 @@ impl ConfigFile {
                 self.source_registry = Some(v);
             }
         }
-        if let Ok(v) = std::env::var("BAMBOO_TARGET_REGISTRY") {
+        if let Ok(v) = std::env::var("BAMBOO_DEST_REGISTRY") {
             if !v.is_empty() {
-                self.target_registry = Some(v);
+                self.dest_registry = Some(v);
             }
         }
         if let Ok(v) = std::env::var("BAMBOO_SOURCE_CREDS") {
@@ -125,9 +125,9 @@ impl ConfigFile {
                 self.source_creds = Some(v);
             }
         }
-        if let Ok(v) = std::env::var("BAMBOO_CREDS") {
+        if let Ok(v) = std::env::var("BAMBOO_DEST_CREDS") {
             if !v.is_empty() {
-                self.creds = Some(v);
+                self.dest_creds = Some(v);
             }
         }
         if let Ok(v) = std::env::var("BAMBOO_AUTHFILE") {
@@ -177,14 +177,14 @@ impl ConfigFile {
         if let Some(v) = other.source_registry.clone() {
             self.source_registry = Some(v);
         }
-        if let Some(v) = other.target_registry.clone() {
-            self.target_registry = Some(v);
+        if let Some(v) = other.dest_registry.clone() {
+            self.dest_registry = Some(v);
         }
         if let Some(v) = other.source_creds.clone() {
             self.source_creds = Some(v);
         }
-        if let Some(v) = other.creds.clone() {
-            self.creds = Some(v);
+        if let Some(v) = other.dest_creds.clone() {
+            self.dest_creds = Some(v);
         }
         if let Some(v) = other.authfile.clone() {
             self.authfile = Some(v);
@@ -259,8 +259,8 @@ fn validate_image_entry(entry: &ImageEntry, idx: usize) -> Result<()> {
     if let Some(source_registry) = &entry.source_registry {
         validate_non_empty(source_registry, &format!("images[{}].source_registry", idx))?;
     }
-    if let Some(target_registry) = &entry.target_registry {
-        validate_non_empty(target_registry, &format!("images[{}].target_registry", idx))?;
+    if let Some(dest_registry) = &entry.dest_registry {
+        validate_non_empty(dest_registry, &format!("images[{}].dest_registry", idx))?;
     }
     Ok(())
 }
@@ -307,7 +307,7 @@ pub fn default_template() -> &'static str {
 source_registry = "hubproxy.example.com"
 
 # 目标 Registry 地址（你的私有 Docker Distribution）
-target_registry = "registry.example.com:5000"
+dest_registry = "registry.example.com:5000"
 
 # 只同步指定平台，格式 os/arch[/variant]；不配置则同步所有架构
 # platform = "linux/amd64"
@@ -316,7 +316,7 @@ target_registry = "registry.example.com:5000"
 # source_creds = "user:pass"
 
 # 目标 Registry 认证，格式 user:pass
-# creds = "user:pass"
+# dest_creds = "user:pass"
 
 # Docker 认证文件路径（同时用于源和目标 Registry）
 authfile = "~/.docker/config.json"
@@ -412,7 +412,7 @@ mod tests {
         let base = write_temp_config(
             r#"
 source_registry = "hubproxy.example.com"
-target_registry = "registry.example.com:5000"
+dest_registry = "registry.example.com:5000"
 "#,
         );
         let images = write_temp_config(
@@ -440,7 +440,7 @@ source_registry = "mirror-a.example.com"
             Some("hubproxy.example.com".to_string())
         );
         assert_eq!(
-            merged.target_registry,
+            merged.dest_registry,
             Some("registry.example.com:5000".to_string())
         );
         assert_eq!(merged.continue_on_error, Some(true));

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-07-17
+
+### Changed
+
+- **破坏性变更**：目标 Registry 认证统一重命名为 `dest_creds`。
+  - 命令行：`--dest-creds`（移除 `--target-creds` / `--creds` 别名）。
+  - 环境变量：`BAMBOO_DEST_CREDS`（移除 `BAMBOO_CREDS`）。
+  - 配置文件：`dest_creds = "user:pass"`（移除 `creds`）。
+- **破坏性变更**：目标 Registry 地址统一重命名为 `dest_registry`。
+  - 命令行：`--dest-registry`（移除 `--target-registry`）。
+  - 环境变量：`BAMBOO_DEST_REGISTRY`（移除 `BAMBOO_TARGET_REGISTRY`）。
+  - 配置文件：`dest_registry = "registry.example.com:5000"`（移除 `target_registry`）。
+
+### Fixed
+
+- 重试日志现在会打印具体错误原因，方便排查同步失败根因。
+
 ## [0.3.3] - 2026-07-17
 
 ### Added

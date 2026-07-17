@@ -35,11 +35,11 @@ pub async fn resolve_sync(args: &SyncArgs) -> Result<SyncSpec> {
         cfg.source_registry.as_deref(),
         defaults::SOURCE_REGISTRY,
     );
-    let target_registry = first_non_empty(
-        args.target_registry.as_deref(),
-        env_opt("BAMBOO_TARGET_REGISTRY").as_deref(),
-        cfg.target_registry.as_deref(),
-        defaults::TARGET_REGISTRY,
+    let dest_registry = first_non_empty(
+        args.dest_registry.as_deref(),
+        env_opt("BAMBOO_DEST_REGISTRY").as_deref(),
+        cfg.dest_registry.as_deref(),
+        defaults::DEST_REGISTRY,
     );
 
     let source_creds = args
@@ -47,11 +47,11 @@ pub async fn resolve_sync(args: &SyncArgs) -> Result<SyncSpec> {
         .clone()
         .or_else(|| env_opt("BAMBOO_SOURCE_CREDS"))
         .or_else(|| cfg.source_creds.clone());
-    let target_creds = args
-        .creds
+    let dest_creds = args
+        .dest_creds
         .clone()
-        .or_else(|| env_opt("BAMBOO_CREDS"))
-        .or_else(|| cfg.creds.clone());
+        .or_else(|| env_opt("BAMBOO_DEST_CREDS"))
+        .or_else(|| cfg.dest_creds.clone());
 
     let platform = args
         .platform
@@ -60,7 +60,7 @@ pub async fn resolve_sync(args: &SyncArgs) -> Result<SyncSpec> {
         .or_else(|| cfg.platform.clone());
 
     let source_auth = resolve_auth(source_creds.as_deref(), &authfile, &source_registry).await?;
-    let target_auth = resolve_auth(target_creds.as_deref(), &authfile, &target_registry).await?;
+    let dest_auth = resolve_auth(dest_creds.as_deref(), &authfile, &dest_registry).await?;
 
     let insecure_src = args
         .insecure_src
@@ -119,14 +119,14 @@ pub async fn resolve_sync(args: &SyncArgs) -> Result<SyncSpec> {
             insecure: insecure_src,
             skip_tls_verify: skip_tls_verify_src,
         },
-        target: RegistryEndpoint {
-            registry: target_registry,
+        dest: RegistryEndpoint {
+            registry: dest_registry,
             insecure: insecure_dest,
             skip_tls_verify: skip_tls_verify_dest,
         },
         auth: AuthPair {
             source: source_auth,
-            target: target_auth,
+            dest: dest_auth,
         },
         authfile,
         policy,
@@ -157,10 +157,10 @@ pub async fn resolve_sync_all(args: &SyncAllArgs) -> Result<(Vec<SyncSpec>, Batc
         .source_registry
         .clone()
         .unwrap_or_else(|| defaults::SOURCE_REGISTRY.to_string());
-    let global_target_registry = cfg
-        .target_registry
+    let global_dest_registry = cfg
+        .dest_registry
         .clone()
-        .unwrap_or_else(|| defaults::TARGET_REGISTRY.to_string());
+        .unwrap_or_else(|| defaults::DEST_REGISTRY.to_string());
     let global_platform = args
         .platform
         .clone()
@@ -173,8 +173,8 @@ pub async fn resolve_sync_all(args: &SyncAllArgs) -> Result<(Vec<SyncSpec>, Batc
         &global_source_registry,
     )
     .await?;
-    let global_target_auth =
-        resolve_auth(cfg.creds.as_deref(), &authfile, &global_target_registry).await?;
+    let global_dest_auth =
+        resolve_auth(cfg.dest_creds.as_deref(), &authfile, &global_dest_registry).await?;
 
     let policy = SyncPolicy {
         max_attempts: cfg.retries.unwrap_or(defaults::RETRIES).max(1),
@@ -214,9 +214,9 @@ pub async fn resolve_sync_all(args: &SyncAllArgs) -> Result<(Vec<SyncSpec>, Batc
                 &entry,
                 &authfile,
                 &global_source_registry,
-                &global_target_registry,
+                &global_dest_registry,
                 &global_source_auth,
-                &global_target_auth,
+                &global_dest_auth,
                 &policy,
                 global_insecure_src,
                 global_insecure_dest,
@@ -244,9 +244,9 @@ async fn resolve_sync_all_entry(
     entry: &ImageEntry,
     global_authfile: &str,
     global_source_registry: &str,
-    global_target_registry: &str,
+    global_dest_registry: &str,
     global_source_auth: &Option<crate::auth::Auth>,
-    global_target_auth: &Option<crate::auth::Auth>,
+    global_dest_auth: &Option<crate::auth::Auth>,
     global_policy: &SyncPolicy,
     global_insecure_src: bool,
     global_insecure_dest: bool,
@@ -266,20 +266,20 @@ async fn resolve_sync_all_entry(
         .source_registry
         .clone()
         .unwrap_or_else(|| global_source_registry.to_string());
-    let target_registry = entry
-        .target_registry
+    let dest_registry = entry
+        .dest_registry
         .clone()
-        .unwrap_or_else(|| global_target_registry.to_string());
+        .unwrap_or_else(|| global_dest_registry.to_string());
 
     let source_auth = if let Some(creds) = &entry.source_creds {
         resolve_auth(Some(creds), &authfile, &source_registry).await?
     } else {
         global_source_auth.clone()
     };
-    let target_auth = if let Some(creds) = &entry.creds {
-        resolve_auth(Some(creds), &authfile, &target_registry).await?
+    let dest_auth = if let Some(creds) = &entry.dest_creds {
+        resolve_auth(Some(creds), &authfile, &dest_registry).await?
     } else {
-        global_target_auth.clone()
+        global_dest_auth.clone()
     };
 
     let insecure_src = entry.insecure_src.unwrap_or(global_insecure_src);
@@ -306,14 +306,14 @@ async fn resolve_sync_all_entry(
             insecure: insecure_src,
             skip_tls_verify: skip_tls_verify_src,
         },
-        target: RegistryEndpoint {
-            registry: target_registry,
+        dest: RegistryEndpoint {
+            registry: dest_registry,
             insecure: insecure_dest,
             skip_tls_verify: skip_tls_verify_dest,
         },
         auth: AuthPair {
             source: source_auth,
-            target: target_auth,
+            dest: dest_auth,
         },
         authfile: authfile.to_string(),
         policy: global_policy.clone(),
@@ -368,10 +368,10 @@ mod tests {
             image: image.to_string(),
             config: None,
             source_registry: None,
-            target_registry: None,
+            dest_registry: None,
             dry_run: false,
             source_creds: None,
-            creds: None,
+            dest_creds: None,
             authfile: None,
             insecure_src: None,
             insecure_dest: None,
@@ -411,11 +411,11 @@ mod tests {
 
     #[test]
     fn test_resolve_sync_uses_defaults() {
-        temp_env::with_var("BAMBOO_TARGET_REGISTRY", None::<&str>, || {
+        temp_env::with_var("BAMBOO_DEST_REGISTRY", None::<&str>, || {
             tokio::runtime::Runtime::new().unwrap().block_on(async {
                 let spec = resolve_sync(&sync_args("nginx:1.25")).await.unwrap();
                 assert_eq!(spec.source.registry, defaults::SOURCE_REGISTRY);
-                assert_eq!(spec.target.registry, defaults::TARGET_REGISTRY);
+                assert_eq!(spec.dest.registry, defaults::DEST_REGISTRY);
                 assert_eq!(spec.policy.max_attempts, defaults::RETRIES);
                 assert_eq!(spec.image.name, "nginx");
                 assert_eq!(spec.image.tag, "1.25");
@@ -436,14 +436,14 @@ mod tests {
 
     #[test]
     fn test_resolve_sync_config_overrides_defaults() {
-        temp_env::with_var("BAMBOO_TARGET_REGISTRY", None::<&str>, || {
+        temp_env::with_var("BAMBOO_DEST_REGISTRY", None::<&str>, || {
             tokio::runtime::Runtime::new().unwrap().block_on(async {
-                let cfg = write_config(r#"target_registry = "cfg-target.example.com:5000""#);
+                let cfg = write_config(r#"dest_registry = "cfg-target.example.com:5000""#);
                 let mut args = sync_args("alpine");
                 args.config = Some(cfg.path().to_string_lossy().to_string());
 
                 let spec = resolve_sync(&args).await.unwrap();
-                assert_eq!(spec.target.registry, "cfg-target.example.com:5000");
+                assert_eq!(spec.dest.registry, "cfg-target.example.com:5000");
             });
         });
     }
@@ -451,16 +451,16 @@ mod tests {
     #[test]
     fn test_resolve_sync_env_overrides_config() {
         temp_env::with_var(
-            "BAMBOO_TARGET_REGISTRY",
+            "BAMBOO_DEST_REGISTRY",
             Some("env-target.example.com:5000"),
             || {
                 tokio::runtime::Runtime::new().unwrap().block_on(async {
-                    let cfg = write_config(r#"target_registry = "cfg-target.example.com:5000""#);
+                    let cfg = write_config(r#"dest_registry = "cfg-target.example.com:5000""#);
                     let mut args = sync_args("alpine");
                     args.config = Some(cfg.path().to_string_lossy().to_string());
 
                     let spec = resolve_sync(&args).await.unwrap();
-                    assert_eq!(spec.target.registry, "env-target.example.com:5000");
+                    assert_eq!(spec.dest.registry, "env-target.example.com:5000");
                 });
             },
         );
@@ -471,7 +471,7 @@ mod tests {
         let cfg = write_config(
             r#"
 source_registry = "global-source.example.com"
-target_registry = "global-target.example.com:5000"
+dest_registry = "global-target.example.com:5000"
 
 [[images]]
 image = "nginx:1.25"
@@ -495,7 +495,7 @@ source_registry = "per-image-source.example.com"
         let cfg = write_config(
             r#"
 source_registry = "global-source.example.com"
-target_registry = "global-target.example.com:5000"
+dest_registry = "global-target.example.com:5000"
 insecure_dest = true
 skip_tls_verify_src = true
 
@@ -512,10 +512,10 @@ insecure_dest = false
 
         assert_eq!(specs.len(), 2);
         // 第一个镜像继承全局 insecure_dest = true
-        assert!(specs[0].target.insecure);
+        assert!(specs[0].dest.insecure);
         assert!(specs[0].source.skip_tls_verify);
         // 第二个镜像被显式覆盖为 false
-        assert!(!specs[1].target.insecure);
+        assert!(!specs[1].dest.insecure);
         assert!(specs[1].source.skip_tls_verify);
     }
 

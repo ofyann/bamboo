@@ -10,7 +10,7 @@ pub fn format(err: &BambooError) -> String {
             msg
         ),
         BambooError::Auth(msg) => format!(
-            "认证失败：{}\n请检查 --creds/--source-creds、authfile 配置或对应的环境变量（BAMBOO_CREDS / BAMBOO_SOURCE_CREDS / BAMBOO_AUTHFILE）。",
+            "认证失败：{}\n请检查 --dest-creds/--source-creds、authfile 配置或对应的环境变量（BAMBOO_DEST_CREDS / BAMBOO_SOURCE_CREDS / BAMBOO_AUTHFILE）。",
             msg
         ),
         BambooError::Config(msg) => format!(
@@ -63,7 +63,7 @@ fn translate_registry_or_sync(msg: &str) -> String {
         || body.contains("Connection refused")
     {
         format!(
-            "无法连接到 Registry：{}\n请检查 source_registry / target_registry 地址、网络连通性，以及 insecure / skip_tls_verify 配置。",
+            "无法连接到 Registry：{}\n请检查 source_registry / dest_registry 地址、网络连通性，以及 insecure / skip_tls_verify 配置。",
             body
         )
     } else {

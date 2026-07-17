@@ -12,7 +12,7 @@ fn test_docker_io_library_default_tag() {
     let normalized = img.normalize();
     assert_eq!(normalized.namespace, "library");
     assert_eq!(normalized.hubproxy_path(), "library/nginx");
-    assert_eq!(normalized.target_path(), "library/nginx");
+    assert_eq!(normalized.dest_path(), "library/nginx");
 }
 
 #[test]

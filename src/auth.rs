@@ -25,7 +25,7 @@ pub async fn resolve_auth(
     authfile: &str,
     registry: &str,
 ) -> Result<Option<Auth>> {
-    // 1. --creds takes precedence
+    // 1. 显式传入的 creds 优先
     if let Some(creds) = creds {
         return Some(parse_creds(creds)).transpose();
     }

@@ -3,14 +3,14 @@ use crate::progress::{BlobContext, Direction, ProgressSink};
 use crate::registry::{Manifest, Registry, RegistryError, RepositoryRef};
 use oci_distribution::manifest::{ImageIndexEntry, OciImageIndex, OciImageManifest, OciManifest};
 
-/// 负责把 manifest（单架构或多架构 index）从 source Registry 拷贝到 target Registry。
+/// 负责把 manifest（单架构或多架构 index）从 source Registry 拷贝到 dest Registry。
 ///
 /// 它只依赖 `Registry` trait，不依赖任何具体 Registry 实现。
 pub struct ManifestCopier<'a> {
     source: &'a dyn Registry,
-    target: &'a dyn Registry,
+    dest: &'a dyn Registry,
     source_auth: &'a Option<Auth>,
-    target_auth: &'a Option<Auth>,
+    dest_auth: &'a Option<Auth>,
     progress: &'a dyn ProgressSink,
     platform: Option<String>,
 }
@@ -18,27 +18,27 @@ pub struct ManifestCopier<'a> {
 impl<'a> ManifestCopier<'a> {
     pub fn new(
         source: &'a dyn Registry,
-        target: &'a dyn Registry,
+        dest: &'a dyn Registry,
         source_auth: &'a Option<Auth>,
-        target_auth: &'a Option<Auth>,
+        dest_auth: &'a Option<Auth>,
         progress: &'a dyn ProgressSink,
         platform: Option<String>,
     ) -> Self {
         Self {
             source,
-            target,
+            dest,
             source_auth,
-            target_auth,
+            dest_auth,
             progress,
             platform,
         }
     }
 
-    /// 从 source 拷贝 manifest 到 target，保留 digest。
+    /// 从 source 拷贝 manifest 到 dest，保留 digest。
     pub async fn copy(
         &self,
         source_ref: &RepositoryRef,
-        target_ref: &RepositoryRef,
+        dest_ref: &RepositoryRef,
     ) -> Result<(), RegistryError> {
         let manifest = self
             .source
@@ -51,7 +51,7 @@ impl<'a> ManifestCopier<'a> {
         match oci_manifest {
             OciManifest::Image(_) => {
                 tracing::debug!("同步单架构镜像");
-                self.copy_single_manifest(source_ref, target_ref, &manifest.bytes)
+                self.copy_single_manifest(source_ref, dest_ref, &manifest.bytes)
                     .await?;
             }
             OciManifest::ImageIndex(index) => {
@@ -59,11 +59,10 @@ impl<'a> ManifestCopier<'a> {
                     "同步多架构镜像 index，包含 {} 个子 manifest",
                     index.manifests.len()
                 );
-                self.copy_image_index(source_ref, target_ref, &index)
-                    .await?;
+                self.copy_image_index(source_ref, dest_ref, &index).await?;
 
-                self.target
-                    .push_manifest(target_ref, &manifest, self.target_auth)
+                self.dest
+                    .push_manifest(dest_ref, &manifest, self.dest_auth)
                     .await?;
             }
         }
@@ -74,7 +73,7 @@ impl<'a> ManifestCopier<'a> {
     async fn copy_single_manifest(
         &self,
         source_ref: &RepositoryRef,
-        target_ref: &RepositoryRef,
+        dest_ref: &RepositoryRef,
         manifest_body: &[u8],
     ) -> Result<(), RegistryError> {
         let manifest: OciImageManifest = serde_json::from_slice(manifest_body)
@@ -91,7 +90,7 @@ impl<'a> ManifestCopier<'a> {
 
         self.copy_blob(
             source_ref,
-            target_ref,
+            dest_ref,
             &manifest.config.digest,
             Some(manifest.config.size.max(0) as u64),
         )
@@ -100,7 +99,7 @@ impl<'a> ManifestCopier<'a> {
         for layer in &manifest.layers {
             self.copy_blob(
                 source_ref,
-                target_ref,
+                dest_ref,
                 &layer.digest,
                 Some(layer.size.max(0) as u64),
             )
@@ -112,11 +111,11 @@ impl<'a> ManifestCopier<'a> {
             .clone()
             .unwrap_or_else(|| "application/vnd.oci.image.manifest.v1+json".to_string());
 
-        self.target
+        self.dest
             .push_manifest(
-                target_ref,
+                dest_ref,
                 &Manifest::new(manifest_body.to_vec(), media_type),
-                self.target_auth,
+                self.dest_auth,
             )
             .await?;
 
@@ -126,7 +125,7 @@ impl<'a> ManifestCopier<'a> {
     async fn copy_blob(
         &self,
         source_ref: &RepositoryRef,
-        target_ref: &RepositoryRef,
+        dest_ref: &RepositoryRef,
         digest: &str,
         size: Option<u64>,
     ) -> Result<(), RegistryError> {
@@ -137,8 +136,8 @@ impl<'a> ManifestCopier<'a> {
 
         // 目标仓库如果已经有这个 blob，直接跳过，避免重复拉取和推送。
         if self
-            .target
-            .blob_exists(target_ref, digest, self.target_auth)
+            .dest
+            .blob_exists(dest_ref, digest, self.dest_auth)
             .await?
         {
             self.progress.on_skip(&ctx, Direction::Push);
@@ -159,8 +158,8 @@ impl<'a> ManifestCopier<'a> {
         tracing::debug!("拉取 blob {} 完成", digest);
 
         tracing::debug!("推送 blob {} ({} bytes)...", digest, data.len());
-        self.target
-            .push_blob(target_ref, digest, data, self.target_auth, self.progress)
+        self.dest
+            .push_blob(dest_ref, digest, data, self.dest_auth, self.progress)
             .await?;
         tracing::debug!("推送 blob {} 完成", digest);
 
@@ -221,7 +220,7 @@ impl<'a> ManifestCopier<'a> {
     async fn copy_image_index(
         &self,
         source_ref: &RepositoryRef,
-        target_ref: &RepositoryRef,
+        dest_ref: &RepositoryRef,
         index: &OciImageIndex,
     ) -> Result<(), RegistryError> {
         let manifests = self.filter_platforms(&index.manifests)?;
@@ -238,12 +237,9 @@ impl<'a> ManifestCopier<'a> {
             // 绕过 oci-distribution 0.11 的 bug：当目标 Registry 推送 manifest 后不返回
             // Location header 时，push_manifest_raw 对 digest reference 会 panic。
             // 使用一个临时 tag 推送子 manifest，manifest 实际仍按 digest 存储，index 也仍按 digest 引用它。
-            let child_target_tag = format!("_bamboo_child_{}", digest.replace(':', "_"));
-            let child_target_ref = RepositoryRef::with_tag(
-                &target_ref.registry,
-                &target_ref.repository,
-                &child_target_tag,
-            );
+            let child_dest_tag = format!("_bamboo_child_{}", digest.replace(':', "_"));
+            let child_dest_ref =
+                RepositoryRef::with_tag(&dest_ref.registry, &dest_ref.repository, &child_dest_tag);
 
             let manifest = self
                 .source
@@ -262,7 +258,7 @@ impl<'a> ManifestCopier<'a> {
                 })
                 .unwrap_or_else(|| "unknown".to_string());
             self.progress.set_platform(Some(platform.clone()));
-            self.copy_single_manifest(&child_source_ref, &child_target_ref, &manifest.bytes)
+            self.copy_single_manifest(&child_source_ref, &child_dest_ref, &manifest.bytes)
                 .await?;
         }
 
@@ -336,10 +332,10 @@ mod tests {
         let (manifest, blobs, digest) = sample_image();
 
         let source = InMemoryRegistry::new();
-        let target = InMemoryRegistry::new();
+        let dest = InMemoryRegistry::new();
 
         let source_ref = RepositoryRef::with_tag("localhost", "library/nginx", "1.25");
-        let target_ref = RepositoryRef::with_tag("localhost", "library/nginx", "1.25");
+        let dest_ref = RepositoryRef::with_tag("localhost", "library/nginx", "1.25");
 
         source.add_manifest(
             source_ref.clone(),
@@ -351,17 +347,17 @@ mod tests {
         }
 
         let progress = NoopProgressSink;
-        let copier = ManifestCopier::new(&source, &target, &None, &None, &progress, None);
-        copier.copy(&source_ref, &target_ref).await.unwrap();
+        let copier = ManifestCopier::new(&source, &dest, &None, &None, &progress, None);
+        copier.copy(&source_ref, &dest_ref).await.unwrap();
 
-        let dest_digest = target.digest(&target_ref, &None).await.unwrap();
+        let dest_digest = dest.digest(&dest_ref, &None).await.unwrap();
         assert_eq!(dest_digest, Some(digest));
 
-        let copied = target.get_manifest(&target_ref).unwrap();
+        let copied = dest.get_manifest(&dest_ref).unwrap();
         assert_eq!(copied.bytes, manifest);
 
         for (d, b) in &blobs {
-            assert_eq!(target.get_blob(d).as_ref(), Some(b));
+            assert_eq!(dest.get_blob(d).as_ref(), Some(b));
         }
     }
 }

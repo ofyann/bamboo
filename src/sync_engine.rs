@@ -7,7 +7,6 @@ use std::time::Duration;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
-use tracing::Instrument;
 
 /// 负责执行单个或批量镜像同步的引擎。
 ///
@@ -26,8 +25,7 @@ impl SyncEngine {
     /// 执行单个同步任务。
     pub async fn run_one(&self, spec: &SyncSpec) -> Result<()> {
         let image = spec.image.image_path_with_tag();
-        let span = tracing::info_span!("sync", image = %image);
-        async move {
+        let result: Result<()> = async {
             let normalized = spec.image.normalize();
             let source_path = normalized.hubproxy_path();
             let target_path = normalized.target_path();
@@ -53,7 +51,8 @@ impl SyncEngine {
             );
 
             tracing::info!(
-                "处理镜像: {} -> 目标: {}/{}",
+                "[{}] 处理镜像: {} -> 目标: {}/{}",
+                image,
                 spec.image.image_path_with_tag(),
                 spec.target.registry,
                 target_path
@@ -72,8 +71,8 @@ impl SyncEngine {
             );
 
             if spec.dry_run {
-                tracing::info!("[空跑模式] 源地址: {}", source_uri);
-                tracing::info!("[空跑模式] 目标地址: {}", target_uri);
+                tracing::info!("[{}] [空跑模式] 源地址: {}", image, source_uri);
+                tracing::info!("[{}] [空跑模式] 目标地址: {}", image, target_uri);
                 return Ok(());
             }
 
@@ -113,7 +112,8 @@ impl SyncEngine {
             if let (Some(src), Some(dest)) = (&src_digest, &dest_digest) {
                 if src == dest && !spec.force {
                     tracing::info!(
-                        "⏭️ 幂等跳过: 目标仓库已存在一致的版本 (Digest: {}...)",
+                        "[{}] ⏭️ 幂等跳过: 目标仓库已存在一致的版本 (Digest: {}...)",
+                        image,
                         &src[..15.min(src.len())]
                     );
                     return Ok(());
@@ -121,7 +121,7 @@ impl SyncEngine {
             }
             tracing::debug!("digest: source={:?}, target={:?}", src_digest, dest_digest);
 
-            tracing::info!("开始网络流式同步...");
+            tracing::info!("[{}] 开始网络流式同步...", image);
 
             let progress = TerminalProgressSink::new(&image);
             let copier = ManifestCopier::new(
@@ -130,6 +130,7 @@ impl SyncEngine {
                 &spec.auth.source,
                 &spec.auth.target,
                 &progress,
+                spec.platform.clone(),
             );
             let copy_fut = try_with_retry(
                 || copier.copy(&source_ref, &target_ref),
@@ -145,10 +146,15 @@ impl SyncEngine {
                 })??;
             }
 
+            tracing::info!("[{}] ✅ 同步成功完成！", image);
             Ok(())
         }
-        .instrument(span)
-        .await
+        .await;
+
+        match result {
+            Ok(()) => Ok(()),
+            Err(e) => Err(BambooError::Sync(format!("[{}] {}", image, e))),
+        }
     }
 
     /// 执行批量同步任务。
@@ -180,13 +186,16 @@ impl SyncEngine {
             });
         }
 
+        let mut success = 0usize;
         let mut errors: Vec<(String, String)> = Vec::new();
 
         while let Some(result) = join_set.join_next().await {
             let (image, sync_result) =
                 result.map_err(|e| BambooError::Sync(format!("任务异常: {}", e)))?;
             match sync_result {
-                Ok(()) => {}
+                Ok(()) => {
+                    success += 1;
+                }
                 Err(e) => {
                     let msg = e.to_string();
                     tracing::error!("同步 {} 失败: {}", image, msg);
@@ -200,13 +209,14 @@ impl SyncEngine {
         }
 
         if errors.is_empty() {
-            tracing::info!("✅ 批量同步全部完成");
+            tracing::info!("✅ 批量同步全部完成，共 {} 个镜像", success);
             Ok(())
         } else {
             let mut summary = format!(
-                "批量同步完成，但 {} / {} 个镜像失败：\n",
-                errors.len(),
-                total
+                "批量同步完成：成功 {} / {}，失败 {}：\n",
+                success,
+                total,
+                errors.len()
             );
             for (image, msg) in &errors {
                 summary.push_str(&format!("  - {}: {}\n", image, msg));
@@ -228,7 +238,6 @@ where
     for attempt in 1..=attempts {
         match f().await {
             Ok(()) => {
-                tracing::info!("✅ 同步成功完成！");
                 return Ok(());
             }
             Err(e) => {
@@ -280,6 +289,7 @@ mod tests {
                 retry_delay: Duration::from_millis(10),
                 timeout: Duration::from_millis(100),
             },
+            platform: None,
             dry_run: false,
             force: false,
         }

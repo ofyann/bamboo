@@ -4,6 +4,7 @@ pub mod config;
 pub mod config_resolver;
 pub mod defaults;
 pub mod error;
+pub mod error_reporter;
 pub mod image;
 pub mod init;
 pub mod logging;

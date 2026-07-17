@@ -82,6 +82,10 @@ pub struct SyncArgs {
     #[arg(long, default_value_t = false)]
     pub force: bool,
 
+    /// 只同步指定平台，格式 os/arch[/variant]，例如 linux/amd64、linux/arm64/v8
+    #[arg(long, short, env = "BAMBOO_PLATFORM")]
+    pub platform: Option<String>,
+
     /// 只输出 WARN 及以上级别日志
     #[arg(long, short, conflicts_with = "verbose", env = "BAMBOO_QUIET", num_args = 0..=1, default_missing_value = "true")]
     pub quiet: Option<bool>,
@@ -108,6 +112,10 @@ pub struct SyncAllArgs {
     /// 并发同步的镜像数量，默认 3
     #[arg(long, env = "BAMBOO_JOBS")]
     pub jobs: Option<usize>,
+
+    /// 只同步指定平台，格式 os/arch[/variant]，例如 linux/amd64、linux/arm64/v8
+    #[arg(long, short, env = "BAMBOO_PLATFORM")]
+    pub platform: Option<String>,
 
     /// 源 Registry 使用 HTTP 协议
     #[arg(long, env = "BAMBOO_INSECURE_SRC", num_args = 0..=1, default_missing_value = "true")]

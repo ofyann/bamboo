@@ -1,8 +1,7 @@
 use crate::auth::Auth;
-use crate::progress::{BlobContext, ProgressSink};
+use crate::progress::{BlobContext, Direction, ProgressSink};
 use crate::registry::{Manifest, Registry, RegistryError, RepositoryRef};
-use oci_distribution::manifest::{OciImageIndex, OciImageManifest, OciManifest};
-use tracing::Instrument;
+use oci_distribution::manifest::{ImageIndexEntry, OciImageIndex, OciImageManifest, OciManifest};
 
 /// 负责把 manifest（单架构或多架构 index）从 source Registry 拷贝到 target Registry。
 ///
@@ -13,6 +12,7 @@ pub struct ManifestCopier<'a> {
     source_auth: &'a Option<Auth>,
     target_auth: &'a Option<Auth>,
     progress: &'a dyn ProgressSink,
+    platform: Option<String>,
 }
 
 impl<'a> ManifestCopier<'a> {
@@ -22,6 +22,7 @@ impl<'a> ManifestCopier<'a> {
         source_auth: &'a Option<Auth>,
         target_auth: &'a Option<Auth>,
         progress: &'a dyn ProgressSink,
+        platform: Option<String>,
     ) -> Self {
         Self {
             source,
@@ -29,6 +30,7 @@ impl<'a> ManifestCopier<'a> {
             source_auth,
             target_auth,
             progress,
+            platform,
         }
     }
 
@@ -78,6 +80,15 @@ impl<'a> ManifestCopier<'a> {
         let manifest: OciImageManifest = serde_json::from_slice(manifest_body)
             .map_err(|e| RegistryError::ParseManifest(e.to_string()))?;
 
+        let total_blobs = 1 + manifest.layers.len();
+        let total_bytes = manifest.config.size.max(0) as u64
+            + manifest
+                .layers
+                .iter()
+                .map(|l| l.size.max(0) as u64)
+                .sum::<u64>();
+        self.progress.init_manifest(total_blobs, total_bytes);
+
         self.copy_blob(
             source_ref,
             target_ref,
@@ -124,6 +135,16 @@ impl<'a> ManifestCopier<'a> {
             size,
         };
 
+        // 目标仓库如果已经有这个 blob，直接跳过，避免重复拉取和推送。
+        if self
+            .target
+            .blob_exists(target_ref, digest, self.target_auth)
+            .await?
+        {
+            self.progress.on_skip(&ctx, Direction::Push);
+            return Ok(());
+        }
+
         tracing::debug!("拉取 blob {} ...", digest);
         let data = self
             .source
@@ -146,13 +167,69 @@ impl<'a> ManifestCopier<'a> {
         Ok(())
     }
 
+    fn filter_platforms<'b>(
+        &self,
+        manifests: &'b [ImageIndexEntry],
+    ) -> Result<Vec<&'b ImageIndexEntry>, RegistryError> {
+        let filter = match &self.platform {
+            None => return Ok(manifests.iter().collect()),
+            Some(f) => f,
+        };
+
+        let parts: Vec<&str> = filter.split('/').collect();
+        if parts.len() != 2 && parts.len() != 3 {
+            return Err(RegistryError::InvalidReference(format!(
+                "平台格式错误: {}（应为 os/arch 或 os/arch/variant）",
+                filter
+            )));
+        }
+
+        let (want_os, want_arch, want_variant) = (parts[0], parts[1], parts.get(2).copied());
+
+        let matched: Vec<_> = manifests
+            .iter()
+            .filter(|entry| {
+                let platform = match &entry.platform {
+                    Some(p) => p,
+                    None => return false,
+                };
+                if platform.os != want_os || platform.architecture != want_arch {
+                    return false;
+                }
+                if let Some(want) = want_variant {
+                    platform
+                        .variant
+                        .as_deref()
+                        .map(|v| v == want)
+                        .unwrap_or(false)
+                } else {
+                    true
+                }
+            })
+            .collect();
+
+        if matched.is_empty() {
+            return Err(RegistryError::InvalidReference(format!(
+                "没有匹配平台 {} 的子 manifest",
+                filter
+            )));
+        }
+
+        Ok(matched)
+    }
+
     async fn copy_image_index(
         &self,
         source_ref: &RepositoryRef,
         target_ref: &RepositoryRef,
         index: &OciImageIndex,
     ) -> Result<(), RegistryError> {
-        for entry in &index.manifests {
+        let manifests = self.filter_platforms(&index.manifests)?;
+        if manifests.is_empty() {
+            return Err(RegistryError::ManifestUnknown);
+        }
+
+        for entry in manifests {
             let digest = &entry.digest;
 
             let child_source_ref =
@@ -173,17 +250,19 @@ impl<'a> ManifestCopier<'a> {
                 .pull_manifest(&child_source_ref, self.source_auth)
                 .await?;
 
-            // 用 span 区分子 manifest 的日志，不再使用 prefix 字符串。
             let platform = entry
                 .platform
                 .as_ref()
-                .map(|p| format!("{}/{}", p.os, p.architecture))
+                .map(|p| {
+                    if let Some(variant) = &p.variant {
+                        format!("{}/{}/{}", p.os, p.architecture, variant)
+                    } else {
+                        format!("{}/{}", p.os, p.architecture)
+                    }
+                })
                 .unwrap_or_else(|| "unknown".to_string());
             self.progress.set_platform(Some(platform.clone()));
-            let span =
-                tracing::info_span!("child_manifest", platform = %platform, digest = %digest);
             self.copy_single_manifest(&child_source_ref, &child_target_ref, &manifest.bytes)
-                .instrument(span)
                 .await?;
         }
 
@@ -272,7 +351,7 @@ mod tests {
         }
 
         let progress = NoopProgressSink;
-        let copier = ManifestCopier::new(&source, &target, &None, &None, &progress);
+        let copier = ManifestCopier::new(&source, &target, &None, &None, &progress, None);
         copier.copy(&source_ref, &target_ref).await.unwrap();
 
         let dest_digest = target.digest(&target_ref, &None).await.unwrap();

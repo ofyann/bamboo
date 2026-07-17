@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-07-17
+
+### Added
+
+- 按镜像/平台汇总 blob 同步进度：`TerminalProgressSink` 现在会在每个单架构镜像或每个多架构平台内聚合 config + layers 的总进度，每 10% 里程碑输出一行汇总（例如 `[redis:8 (linux/amd64)] 总进度 2/5 blobs，120 MiB / 1.5 GiB (8%)`）。
+- 配置文件严格校验：`ConfigFile` 现在拒绝未知字段，并对 `platform`、`timeout`、`retry_delay`、`jobs`、`images` 等字段格式进行校验，错误信息统一为中文。
+- 多架构镜像平台过滤：`--platform` / 配置 `platform` 可指定只同步某个 OS/ARCH（或 OS/ARCH/VARIANT），例如 `linux/amd64`。
+- 目标仓库 blob 存在性检查：同步前检测目标 Registry 是否已有对应 blob，有则跳过拉取和推送，提升幂等同步效率。
+- 中文错误翻译层：新增 `error_reporter.rs`，将 Registry 网络、TLS、manifest 不存在等底层错误翻译成更直接的中文提示。
+
+### Changed
+
+- 单镜像 `bamboo sync` 与批量 `bamboo sync-all` 统一使用 `SyncEngine`，集中处理 retry、timeout、并发控制与失败聚合。
+- `progress.rs` 进度接口增加 `init_manifest`，`NoopProgressSink` 与 `TerminalProgressSink` 同步更新。
+
 ## [0.3.2] - 2026-07-16
 
 ### Added

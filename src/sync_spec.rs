@@ -13,6 +13,7 @@ pub struct SyncSpec {
     pub auth: AuthPair,
     pub authfile: String,
     pub policy: SyncPolicy,
+    pub platform: Option<String>,
     pub dry_run: bool,
     pub force: bool,
 }

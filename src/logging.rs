@@ -34,7 +34,11 @@ pub fn level_from_flags(quiet: Option<bool>, verbose: Option<bool>) -> LogLevel 
 
 /// 初始化 tracing subscriber，保持与原先类似的时间戳+级别输出格式。
 pub fn init_subscriber(level: LogLevel) {
-    let filter = EnvFilter::default().add_directive(level.to_tracing_level().into());
+    // 默认过滤掉 oci_distribution 的非致命 WARN（如 NoSignatureComponent），
+    // 减少无决策价值的刷屏；可用 RUST_LOG 覆盖。
+    let filter_str = format!("{},oci_distribution=error", level.to_tracing_level());
+    let filter = EnvFilter::try_new(filter_str)
+        .unwrap_or_else(|_| EnvFilter::default().add_directive(level.to_tracing_level().into()));
 
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_timer(BambooTimer)

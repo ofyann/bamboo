@@ -163,7 +163,7 @@ async fn test_copy_single_arch_image() {
     assert!(target.digest(&target_ref, &None).await.unwrap().is_none());
 
     let progress = NoopProgressSink;
-    let copier = ManifestCopier::new(&source, &target, &None, &None, &progress);
+    let copier = ManifestCopier::new(&source, &target, &None, &None, &progress, None);
     copier.copy(&source_ref, &target_ref).await.unwrap();
 
     let dest_digest = target.digest(&target_ref, &None).await.unwrap();
@@ -249,7 +249,7 @@ async fn test_copy_multi_arch_image_index() {
     assert!(target.digest(&target_ref, &None).await.unwrap().is_none());
 
     let progress = NoopProgressSink;
-    let copier = ManifestCopier::new(&source, &target, &None, &None, &progress);
+    let copier = ManifestCopier::new(&source, &target, &None, &None, &progress, None);
     copier.copy(&source_ref, &target_ref).await.unwrap();
 
     let dest_digest = target.digest(&target_ref, &None).await.unwrap();
@@ -263,4 +263,100 @@ async fn test_copy_multi_arch_image_index() {
 
     let (_, stored_arm64) = dest.manifest("library/nginx", &arm64_digest).unwrap();
     assert_eq!(stored_arm64, arm64_manifest);
+}
+
+#[tokio::test]
+async fn test_copy_multi_arch_image_index_filters_platform() {
+    let src = MockRegistry::start().await;
+    let dest = MockRegistry::start().await;
+
+    let (amd64_manifest, amd64_blobs) = sample_child_manifest("amd64", b"amd64-layer".to_vec());
+    let (arm64_manifest, arm64_blobs) = sample_child_manifest("arm64", b"arm64-layer".to_vec());
+
+    let amd64_digest = sha256_hex(&amd64_manifest);
+    let arm64_digest = sha256_hex(&arm64_manifest);
+
+    let index = format!(
+        r#"{{
+  "schemaVersion": 2,
+  "mediaType": "{}",
+  "manifests": [
+    {{
+      "mediaType": "{}",
+      "size": {},
+      "digest": "{}",
+      "platform": {{"architecture": "amd64", "os": "linux"}}
+    }},
+    {{
+      "mediaType": "{}",
+      "size": {},
+      "digest": "{}",
+      "platform": {{"architecture": "arm64", "os": "linux"}}
+    }}
+  ]
+}}"#,
+        INDEX_MEDIA_TYPE,
+        MANIFEST_MEDIA_TYPE,
+        amd64_manifest.len(),
+        amd64_digest,
+        MANIFEST_MEDIA_TYPE,
+        arm64_manifest.len(),
+        arm64_digest
+    )
+    .into_bytes();
+
+    let mut all_blobs = HashMap::new();
+    all_blobs.extend(amd64_blobs);
+    all_blobs.extend(arm64_blobs);
+
+    src.add_image(
+        "library/nginx",
+        "1.25",
+        INDEX_MEDIA_TYPE,
+        index.clone(),
+        all_blobs,
+    );
+    src.add_image(
+        "library/nginx",
+        &amd64_digest,
+        MANIFEST_MEDIA_TYPE,
+        amd64_manifest.clone(),
+        HashMap::new(),
+    );
+    src.add_image(
+        "library/nginx",
+        &arm64_digest,
+        MANIFEST_MEDIA_TYPE,
+        arm64_manifest.clone(),
+        HashMap::new(),
+    );
+
+    let source = OciRegistry::new(true, false);
+    let target = OciRegistry::new(true, false);
+    let source_ref = repo_ref(&src.base_url(), "library/nginx", "1.25");
+    let target_ref = repo_ref(&dest.base_url(), "library/nginx", "1.25");
+
+    let progress = NoopProgressSink;
+    let copier = ManifestCopier::new(
+        &source,
+        &target,
+        &None,
+        &None,
+        &progress,
+        Some("linux/arm64".to_string()),
+    );
+    copier.copy(&source_ref, &target_ref).await.unwrap();
+
+    let dest_digest = target.digest(&target_ref, &None).await.unwrap();
+    assert!(dest_digest.is_some());
+
+    // arm64 子 manifest 应该被拷贝
+    let (_, stored_arm64) = dest.manifest("library/nginx", &arm64_digest).unwrap();
+    assert_eq!(stored_arm64, arm64_manifest);
+
+    // amd64 子 manifest 不应该被拷贝
+    assert!(
+        dest.manifest("library/nginx", &amd64_digest).is_none(),
+        "platform 过滤后不应拷贝 amd64 子 manifest"
+    );
 }

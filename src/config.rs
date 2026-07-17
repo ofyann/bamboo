@@ -1,8 +1,11 @@
 use crate::error::{BambooError, Result};
+use crate::image::ImageRef;
 use serde::Deserialize;
 use std::path::Path;
+use std::str::FromStr;
 
 #[derive(Debug, Default, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct ConfigFile {
     pub source_registry: Option<String>,
     pub target_registry: Option<String>,
@@ -17,10 +20,14 @@ pub struct ConfigFile {
     pub retry_delay: Option<String>,
     pub timeout: Option<String>,
     pub continue_on_error: Option<bool>,
+    pub platform: Option<String>,
+    pub jobs: Option<usize>,
+    pub force: Option<bool>,
     pub images: Option<Vec<ImageEntry>>,
 }
 
 #[derive(Debug, Default, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct ImageEntry {
     pub image: String,
     pub source_registry: Option<String>,
@@ -32,19 +39,67 @@ pub struct ImageEntry {
     pub insecure_dest: Option<bool>,
     pub skip_tls_verify_src: Option<bool>,
     pub skip_tls_verify_dest: Option<bool>,
+    pub platform: Option<String>,
+    pub force: Option<bool>,
 }
 
 impl ConfigFile {
     /// Load a TOML config file from the given path.
     pub async fn from_path<P: AsRef<Path>>(path: P) -> Result<Self> {
         let contents = tokio::fs::read_to_string(path.as_ref()).await?;
-        toml::from_str(&contents).map_err(|e| {
+        let cfg: ConfigFile = toml::from_str(&contents).map_err(|e| {
             BambooError::Config(format!(
                 "配置文件 {} 格式错误: {}",
                 path.as_ref().display(),
                 e
             ))
-        })
+        })?;
+        cfg.validate()?;
+        Ok(cfg)
+    }
+
+    /// 校验配置字段格式，尽早发现 typo 或无效值。
+    pub fn validate(&self) -> Result<()> {
+        if let Some(platform) = &self.platform {
+            validate_platform(platform)?;
+        }
+        if let Some(jobs) = self.jobs {
+            if jobs == 0 {
+                return Err(BambooError::Config("jobs 必须大于 0".to_string()));
+            }
+        }
+        if let Some(retries) = self.retries {
+            if retries == 0 {
+                return Err(BambooError::Config(
+                    "retries 为 0 无意义，至少为 1".to_string(),
+                ));
+            }
+        }
+        if let Some(retry_delay) = &self.retry_delay {
+            validate_duration(retry_delay, "retry_delay")?;
+        }
+        if let Some(timeout) = &self.timeout {
+            validate_duration(timeout, "timeout")?;
+        }
+        if let Some(source_registry) = &self.source_registry {
+            validate_non_empty(source_registry, "source_registry")?;
+        }
+        if let Some(target_registry) = &self.target_registry {
+            validate_non_empty(target_registry, "target_registry")?;
+        }
+
+        if let Some(images) = &self.images {
+            if images.is_empty() {
+                return Err(BambooError::Config(
+                    "images 列表为空，请至少配置一个镜像".to_string(),
+                ));
+            }
+            for (idx, entry) in images.iter().enumerate() {
+                validate_image_entry(entry, idx)?;
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -107,6 +162,11 @@ impl ConfigFile {
                 self.timeout = Some(v);
             }
         }
+        if let Ok(v) = std::env::var("BAMBOO_PLATFORM") {
+            if !v.is_empty() {
+                self.platform = Some(v);
+            }
+        }
     }
 
     /// Merge another config into this one.
@@ -153,6 +213,15 @@ impl ConfigFile {
         if let Some(v) = other.continue_on_error {
             self.continue_on_error = Some(v);
         }
+        if let Some(v) = other.platform.clone() {
+            self.platform = Some(v);
+        }
+        if let Some(v) = other.jobs {
+            self.jobs = Some(v);
+        }
+        if let Some(v) = other.force {
+            self.force = Some(v);
+        }
         if let Some(v) = other.images.clone() {
             self.images.get_or_insert_with(Vec::new).extend(v);
         }
@@ -169,8 +238,63 @@ impl ConfigFile {
             let cfg = ConfigFile::from_path(path).await?;
             merged.merge(&cfg);
         }
+        merged.validate()?;
         Ok(merged)
     }
+}
+
+fn validate_image_entry(entry: &ImageEntry, idx: usize) -> Result<()> {
+    if entry.image.is_empty() {
+        return Err(BambooError::Config(format!(
+            "images[{}].image 不能为空",
+            idx
+        )));
+    }
+    ImageRef::from_str(&entry.image)
+        .map_err(|e| BambooError::Config(format!("images[{}].image 格式错误: {}", idx, e)))?;
+    if let Some(platform) = &entry.platform {
+        validate_platform(platform)
+            .map_err(|e| BambooError::Config(format!("images[{}].platform {}", idx, e)))?;
+    }
+    if let Some(source_registry) = &entry.source_registry {
+        validate_non_empty(source_registry, &format!("images[{}].source_registry", idx))?;
+    }
+    if let Some(target_registry) = &entry.target_registry {
+        validate_non_empty(target_registry, &format!("images[{}].target_registry", idx))?;
+    }
+    Ok(())
+}
+
+fn validate_platform(platform: &str) -> Result<()> {
+    let parts: Vec<&str> = platform.split('/').collect();
+    if parts.len() != 2 && parts.len() != 3 {
+        return Err(BambooError::Config(format!(
+            "platform 格式错误: {}（应为 os/arch 或 os/arch/variant）",
+            platform
+        )));
+    }
+    for part in &parts {
+        if part.is_empty() {
+            return Err(BambooError::Config(format!(
+                "platform 包含空字段: {}",
+                platform
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_duration(value: &str, name: &str) -> Result<()> {
+    humantime::parse_duration(value)
+        .map_err(|e| BambooError::Config(format!("{} 无法解析为时长 '{}': {}", name, value, e)))?;
+    Ok(())
+}
+
+fn validate_non_empty(value: &str, name: &str) -> Result<()> {
+    if value.trim().is_empty() {
+        return Err(BambooError::Config(format!("{} 不能为空", name)));
+    }
+    Ok(())
 }
 
 /// Generate a default config file template.
@@ -184,6 +308,9 @@ source_registry = "hubproxy.example.com"
 
 # 目标 Registry 地址（你的私有 Docker Distribution）
 target_registry = "registry.example.com:5000"
+
+# 只同步指定平台，格式 os/arch[/variant]；不配置则同步所有架构
+# platform = "linux/amd64"
 
 # 源 Registry 认证，格式 user:pass
 # source_creds = "user:pass"
@@ -214,6 +341,15 @@ retry_delay = "5s"
 
 # 同步超时时间，0 表示不超时
 timeout = "10m"
+
+# 即使 digest 一致也强制同步（默认 false）
+force = false
+
+# 批量同步时的并发数（仅对 sync-all 生效）
+jobs = 3
+
+# 批量同步时遇到错误是否继续同步后续镜像（仅对 sync-all 生效）
+continue_on_error = false
 "#
 }
 
@@ -321,5 +457,45 @@ source_registry = "mirror-a.example.com"
     async fn test_load_many_empty_paths_errors() {
         let result = ConfigFile::load_many(&[]).await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_rejects_unknown_fields() {
+        let cfg = write_temp_config(r#"unknown_field = "x""#);
+        let result = ConfigFile::from_path(cfg.path()).await;
+        assert!(result.is_err(), "应拒绝未知字段");
+    }
+
+    #[tokio::test]
+    async fn test_rejects_invalid_platform_format() {
+        let cfg = write_temp_config(r#"platform = "linux""#);
+        let result = ConfigFile::from_path(cfg.path()).await;
+        assert!(result.is_err(), "应拒绝 platform 格式错误");
+    }
+
+    #[tokio::test]
+    async fn test_rejects_invalid_timeout() {
+        let cfg = write_temp_config(r#"timeout = "1x""#);
+        let result = ConfigFile::from_path(cfg.path()).await;
+        assert!(result.is_err(), "应拒绝无法解析的 timeout");
+    }
+
+    #[tokio::test]
+    async fn test_rejects_zero_jobs() {
+        let cfg = write_temp_config(r#"jobs = 0""#);
+        let result = ConfigFile::from_path(cfg.path()).await;
+        assert!(result.is_err(), "应拒绝 jobs=0");
+    }
+
+    #[tokio::test]
+    async fn test_rejects_invalid_image_entry() {
+        let cfg = write_temp_config(
+            r#"
+[[images]]
+image = "   "
+"#,
+        );
+        let result = ConfigFile::from_path(cfg.path()).await;
+        assert!(result.is_err(), "应拒绝空 image");
     }
 }

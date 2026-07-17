@@ -1,5 +1,5 @@
 use crate::auth::Auth;
-use crate::progress::{BlobContext, Direction, NoopProgressSink, ProgressSink};
+use crate::progress::{BlobContext, Direction, ProgressSink};
 use crate::registry::{Manifest, Reference, Registry, RegistryError, RepositoryRef};
 use http::header::HeaderValue;
 use oci_distribution::client::{Client, ClientConfig, ClientProtocol};
@@ -180,16 +180,37 @@ impl Registry for OciRegistry {
         &self,
         repo: &RepositoryRef,
         digest: &str,
-        auth: &Option<Auth>,
+        _auth: &Option<Auth>,
     ) -> Result<bool, RegistryError> {
-        // oci-distribution 没有直接的 blob_exists；先尝试 pull，成功则存在。
-        match self
-            .pull_blob(repo, digest, None, auth, &NoopProgressSink)
-            .await
-        {
+        // 用 pull_blob_stream 做轻量级存在性探测：只发起请求、拿到响应状态就丢弃流，
+        // 避免下载整个 blob。
+        let reference = to_oci_reference(repo)?;
+        let descriptor = descriptor_from_digest(digest, 0);
+
+        match self.client.pull_blob_stream(&reference, &descriptor).await {
             Ok(_) => Ok(true),
-            Err(RegistryError::PullBlob(_)) => Ok(false),
-            Err(e) => Err(e),
+            Err(oci_distribution::errors::OciDistributionError::RegistryError {
+                envelope, ..
+            }) if envelope
+                .errors
+                .iter()
+                .any(|e| e.code == oci_distribution::errors::OciErrorCode::ManifestUnknown) =>
+            {
+                Ok(false)
+            }
+            Err(oci_distribution::errors::OciDistributionError::ServerError {
+                code: 404, ..
+            }) => Ok(false),
+            Err(oci_distribution::errors::OciDistributionError::RequestError(e))
+                if e.status().map(|s| s.as_u16()) == Some(404) =>
+            {
+                Ok(false)
+            }
+            Err(e) => {
+                // 探测失败时不中断同步，回退到“假设不存在”，由后续 pull/push 决定成败。
+                tracing::debug!("探测 blob {} 存在性失败，按不存在处理: {}", digest, e);
+                Ok(false)
+            }
         }
     }
 }

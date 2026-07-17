@@ -53,6 +53,12 @@ pub async fn resolve_sync(args: &SyncArgs) -> Result<SyncSpec> {
         .or_else(|| env_opt("BAMBOO_CREDS"))
         .or_else(|| cfg.creds.clone());
 
+    let platform = args
+        .platform
+        .clone()
+        .or_else(|| env_opt("BAMBOO_PLATFORM"))
+        .or_else(|| cfg.platform.clone());
+
     let source_auth = resolve_auth(source_creds.as_deref(), &authfile, &source_registry).await?;
     let target_auth = resolve_auth(target_creds.as_deref(), &authfile, &target_registry).await?;
 
@@ -124,8 +130,9 @@ pub async fn resolve_sync(args: &SyncArgs) -> Result<SyncSpec> {
         },
         authfile,
         policy,
+        platform,
         dry_run: args.dry_run,
-        force: args.force,
+        force: args.force || cfg.force.unwrap_or(false),
     })
 }
 
@@ -154,6 +161,11 @@ pub async fn resolve_sync_all(args: &SyncAllArgs) -> Result<(Vec<SyncSpec>, Batc
         .target_registry
         .clone()
         .unwrap_or_else(|| defaults::TARGET_REGISTRY.to_string());
+    let global_platform = args
+        .platform
+        .clone()
+        .or_else(|| env_opt("BAMBOO_PLATFORM"))
+        .or_else(|| cfg.platform.clone());
 
     let global_source_auth = resolve_auth(
         cfg.source_creds.as_deref(),
@@ -192,6 +204,8 @@ pub async fn resolve_sync_all(args: &SyncAllArgs) -> Result<(Vec<SyncSpec>, Batc
         .or(cfg.skip_tls_verify_dest)
         .unwrap_or(false);
 
+    let global_force = args.force || cfg.force.unwrap_or(false);
+
     let mut specs = Vec::with_capacity(images.len());
     for entry in images {
         specs.push(
@@ -208,15 +222,16 @@ pub async fn resolve_sync_all(args: &SyncAllArgs) -> Result<(Vec<SyncSpec>, Batc
                 global_insecure_dest,
                 global_skip_tls_verify_src,
                 global_skip_tls_verify_dest,
+                global_platform.clone(),
+                global_force,
                 args.dry_run,
-                args.force,
             )
             .await?,
         );
     }
 
     let options = BatchOptions {
-        jobs: args.jobs.unwrap_or(defaults::JOBS).max(1),
+        jobs: args.jobs.or(cfg.jobs).unwrap_or(defaults::JOBS).max(1),
         continue_on_error: cfg.continue_on_error.unwrap_or(false),
     };
 
@@ -227,7 +242,7 @@ pub async fn resolve_sync_all(args: &SyncAllArgs) -> Result<(Vec<SyncSpec>, Batc
 async fn resolve_sync_all_entry(
     _cfg: &ConfigFile,
     entry: &ImageEntry,
-    authfile: &str,
+    global_authfile: &str,
     global_source_registry: &str,
     global_target_registry: &str,
     global_source_auth: &Option<crate::auth::Auth>,
@@ -237,9 +252,16 @@ async fn resolve_sync_all_entry(
     global_insecure_dest: bool,
     global_skip_tls_verify_src: bool,
     global_skip_tls_verify_dest: bool,
+    global_platform: Option<String>,
+    global_force: bool,
     dry_run: bool,
-    force: bool,
 ) -> Result<SyncSpec> {
+    let authfile = entry
+        .authfile
+        .as_deref()
+        .unwrap_or(global_authfile)
+        .to_string();
+
     let source_registry = entry
         .source_registry
         .clone()
@@ -250,12 +272,12 @@ async fn resolve_sync_all_entry(
         .unwrap_or_else(|| global_target_registry.to_string());
 
     let source_auth = if let Some(creds) = &entry.source_creds {
-        resolve_auth(Some(creds), authfile, &source_registry).await?
+        resolve_auth(Some(creds), &authfile, &source_registry).await?
     } else {
         global_source_auth.clone()
     };
     let target_auth = if let Some(creds) = &entry.creds {
-        resolve_auth(Some(creds), authfile, &target_registry).await?
+        resolve_auth(Some(creds), &authfile, &target_registry).await?
     } else {
         global_target_auth.clone()
     };
@@ -268,6 +290,14 @@ async fn resolve_sync_all_entry(
     let skip_tls_verify_dest = entry
         .skip_tls_verify_dest
         .unwrap_or(global_skip_tls_verify_dest);
+
+    let platform = entry
+        .platform
+        .as_ref()
+        .or(global_platform.as_ref())
+        .cloned();
+
+    let force = entry.force.unwrap_or(global_force);
 
     Ok(SyncSpec {
         image: ImageRef::from_str(&entry.image)?,
@@ -287,6 +317,7 @@ async fn resolve_sync_all_entry(
         },
         authfile: authfile.to_string(),
         policy: global_policy.clone(),
+        platform,
         dry_run,
         force,
     })
@@ -350,6 +381,7 @@ mod tests {
             retry_delay: None,
             timeout: None,
             force: false,
+            platform: None,
             quiet: None,
             verbose: None,
         }
@@ -361,6 +393,7 @@ mod tests {
             dry_run: false,
             force: false,
             jobs: None,
+            platform: None,
             insecure_src: None,
             insecure_dest: None,
             skip_tls_verify_src: None,

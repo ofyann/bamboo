@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-07-17
+
+### Added
+
+- `sync-all` 镜像列表支持更简洁的写法：`images = ["redis:7", "redis:7.4"]`。同时支持在数组中混入需要单独配置的高级 table，例如 `{ image = "node:14-slim", platform = "linux/amd64" }`，也兼容原来的 `[[images]]` 写法。
+
 ## [0.3.7] - 2026-07-17
 
 ### Changed

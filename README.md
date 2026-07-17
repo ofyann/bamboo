@@ -148,22 +148,42 @@ timeout = "10m"
 
 ### 镜像列表配置（`images.toml`）
 
-只放要同步的镜像列表，以及需要覆盖的参数：
+只放要同步的镜像列表。最简写法是纯字符串数组：
 
 ```toml
 continue_on_error = false
 
+images = [
+    "redis:7",
+    "redis:7.4",
+    "gcr.io/k8s-minikube/storage-provisioner:v5",
+    "gitea/gitea:1.26.1",
+    "node:14-slim",
+]
+```
+
+个别镜像需要单独配置时，可以在数组里混入 table：
+
+```toml
+images = [
+    "redis:7",
+    { image = "node:14-slim", platform = "linux/amd64" },
+    { image = "gitea/gitea:1.26.1", dest_registry = "local-gitea.example.com:5000" },
+]
+```
+
+也兼容原来的 `[[images]]` 写法：
+
+```toml
 [[images]]
 image = "nginx:1.25"
 
 [[images]]
 image = "redis:7"
-# 这个镜像单独指定目标 Registry
 source_registry = "mirror-a.example.com"
-dest_registry = "local-redis.example.com:5000"
 ```
 
-每个 `[[images]]` 支持的字段：
+每个镜像条目支持的字段：
 
 | 字段 | 说明 |
 |---|---|

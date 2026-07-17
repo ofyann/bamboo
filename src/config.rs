@@ -1,6 +1,6 @@
 use crate::error::{BambooError, Result};
 use crate::image::ImageRef;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use std::path::Path;
 use std::str::FromStr;
 
@@ -23,6 +23,7 @@ pub struct ConfigFile {
     pub platform: Option<String>,
     pub jobs: Option<usize>,
     pub force: Option<bool>,
+    #[serde(default, deserialize_with = "deserialize_images")]
     pub images: Option<Vec<ImageEntry>>,
 }
 
@@ -41,6 +42,47 @@ pub struct ImageEntry {
     pub skip_tls_verify_dest: Option<bool>,
     pub platform: Option<String>,
     pub force: Option<bool>,
+}
+
+/// 支持 `images` 字段同时接受简单字符串列表和高级 table 列表。
+///
+/// 例如以下两种写法都合法，也可以混用：
+///
+/// ```toml
+/// images = ["redis:7", "redis:7.4"]
+/// ```
+///
+/// ```toml
+/// images = [
+///     "redis:7",
+///     { image = "node:14-slim", platform = "linux/amd64" },
+/// ]
+/// ```
+fn deserialize_images<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<Vec<ImageEntry>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum ImageSpec {
+        Simple(String),
+        Advanced(ImageEntry),
+    }
+
+    let specs: Option<Vec<ImageSpec>> = Option::deserialize(deserializer)?;
+    Ok(specs.map(|list| {
+        list.into_iter()
+            .map(|spec| match spec {
+                ImageSpec::Simple(image) => ImageEntry {
+                    image,
+                    ..Default::default()
+                },
+                ImageSpec::Advanced(entry) => entry,
+            })
+            .collect()
+    }))
 }
 
 impl ConfigFile {
@@ -350,6 +392,17 @@ jobs = 3
 
 # 批量同步时遇到错误是否继续同步后续镜像（仅对 sync-all 生效）
 continue_on_error = false
+
+# 批量同步的镜像列表（sync-all 使用）。
+# 可以是简单字符串列表：
+# images = ["redis:7", "redis:7.4", "gitea/gitea:1.26.1"]
+#
+# 也可以混入需要单独配置的高级 table：
+# images = [
+#     "redis:7",
+#     { image = "node:14-slim", platform = "linux/amd64" },
+#     { image = "gcr.io/k8s-minikube/storage-provisioner:v5", source_registry = "mirror.example.com" },
+# ]
 "#
 }
 
@@ -497,5 +550,35 @@ image = "   "
         );
         let result = ConfigFile::from_path(cfg.path()).await;
         assert!(result.is_err(), "应拒绝空 image");
+    }
+
+    #[tokio::test]
+    async fn test_simple_image_list() {
+        let cfg = write_temp_config(r#"images = ["redis:7", "redis:7.4"]"#);
+        let result = ConfigFile::from_path(cfg.path()).await.unwrap();
+        let imgs = result.images.unwrap();
+        assert_eq!(imgs.len(), 2);
+        assert_eq!(imgs[0].image, "redis:7");
+        assert_eq!(imgs[1].image, "redis:7.4");
+    }
+
+    #[tokio::test]
+    async fn test_mixed_image_list() {
+        let cfg = write_temp_config(
+            r#"
+images = [
+    "redis:7",
+    { image = "node:14-slim", platform = "linux/amd64" },
+    "gitea/gitea:1.26.1",
+]
+"#,
+        );
+        let result = ConfigFile::from_path(cfg.path()).await.unwrap();
+        let imgs = result.images.unwrap();
+        assert_eq!(imgs.len(), 3);
+        assert_eq!(imgs[0].image, "redis:7");
+        assert_eq!(imgs[1].image, "node:14-slim");
+        assert_eq!(imgs[1].platform, Some("linux/amd64".to_string()));
+        assert_eq!(imgs[2].image, "gitea/gitea:1.26.1");
     }
 }
